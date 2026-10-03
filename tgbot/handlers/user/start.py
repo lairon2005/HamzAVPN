@@ -105,6 +105,11 @@ async def process_start_command(message: Message, command: CommandObject, bot: B
         await show_documents(message, state)
         return
 
+    if command and command.args == "tariffs":
+        from .legal import show_tariffs
+        await show_tariffs(message, state)
+        return
+
     # 2. Обрабатываем реферальную ссылку
     referrer_id = None
     if command and command.args and command.args.startswith('ref'):

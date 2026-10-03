@@ -8,7 +8,7 @@
     {% for heading, text in document.sections %}
     <section class="mt-4">
         <h2 class="h4">{{ heading }}</h2>
-        <p style="line-height: 1.8;">{{ text }}</p>
+        <p style="line-height: 1.8; white-space: pre-line;">{{ text }}</p>
     </section>
     {% endfor %}
     <a class="btn btn-brand mt-3" href="/support">Обратиться в поддержку</a>

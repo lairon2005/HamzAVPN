@@ -165,10 +165,10 @@ def tariffs_keyboard(
         is_loyalty = user_has_active_sub and bool(tariff.loyalty_price) and base_price == tariff.loyalty_price
 
         if promo_procent > 0:
-            discounted_price = int(base_price * (1 - promo_procent / 100))
-            price_part = f"{discounted_price} RUB (скидка {promo_procent}%)"
+            discounted_price = round(base_price * (1 - promo_procent / 100), 2)
+            price_part = f"{discounted_price:.2f} ₽ (скидка {promo_procent}%)"
         else:
-            price_part = f"{base_price} RUB"
+            price_part = f"{base_price:.2f} ₽"
 
         loyalty_mark = " · ваша цена" if is_loyalty else ""
         star = "⭐ " if tariff.is_highlighted else ""
@@ -176,7 +176,7 @@ def tariffs_keyboard(
         gb_part = format_quota(tariff.data_limit_gb)
 
         builder.button(
-            text=f"{star}{tariff.name} · {gb_part} — {price_part}{loyalty_mark}{highlight_mark}",
+            text=f"{star}{tariff.name} · {tariff.duration_days} дней · {gb_part} — {price_part}{loyalty_mark}{highlight_mark}",
             callback_data=f"select_tariff_{tariff.id}"
         )
 
@@ -217,15 +217,14 @@ def winback_survey_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def payment_method_choice_keyboard(tariff_id: int, slots: int = 0) -> InlineKeyboardMarkup:
-    """Выбор способа разовой оплаты через Platega (карта / СБП).
+def payment_method_choice_keyboard(tariff_id: int, slots: int = 0,
+                                   *, total_amount: float) -> InlineKeyboardMarkup:
+    """Переход к Platega с итоговой суммой, рассчитанной обработчиком.
 
-    `slots` — сколько доп. устройств выбрано на предыдущем шаге; едет в
-    callback_data, чтобы количество не потерялось при смене способа оплаты.
+    Доступные способы пользователь выбирает на странице платёжного сервиса.
     """
     builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Банковская карта", callback_data=f"paymethod_card_{tariff_id}_{slots}")
-    builder.button(text="🏦 СБП", callback_data=f"paymethod_sbp_{tariff_id}_{slots}")
+    builder.button(text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"tpay_{tariff_id}_{slots}")
     builder.button(text="📄 Документы и тарифы", callback_data="documents")
     builder.button(text="⬅️ Назад", callback_data=f"select_tariff_{tariff_id}")
     builder.adjust(1)
@@ -233,7 +232,7 @@ def payment_method_choice_keyboard(tariff_id: int, slots: int = 0) -> InlineKeyb
 
 
 def tariff_slots_keyboard(tariff_id: int, slots: int, max_slots: int,
-                          base_limit: int) -> InlineKeyboardMarkup:
+                          base_limit: int, *, total_amount: float) -> InlineKeyboardMarkup:
     """
     Шаг чекаута «сколько устройств». Степпер −/+ и переход к оплате.
 
@@ -253,14 +252,15 @@ def tariff_slots_keyboard(tariff_id: int, slots: int, max_slots: int,
     builder.row(*stepper)
 
     builder.row(InlineKeyboardButton(
-        text="💳 Перейти к оплате", callback_data=f"tpay_{tariff_id}_{slots}"
+        text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"tpay_{tariff_id}_{slots}"
     ))
     builder.row(InlineKeyboardButton(text="📄 Документы и тарифы", callback_data="documents"))
     builder.row(InlineKeyboardButton(text="⬅️ К выбору тарифа", callback_data="buy_subscription"))
     return builder.as_markup()
 
 
-def slot_purchase_keyboard(slots: int, max_slots: int, total_limit: int) -> InlineKeyboardMarkup:
+def slot_purchase_keyboard(slots: int, max_slots: int, total_limit: int,
+                           *, total_amount: float) -> InlineKeyboardMarkup:
     """Докупка устройств в середине оплаченного периода: степпер + оплата."""
     builder = InlineKeyboardBuilder()
 
@@ -272,21 +272,23 @@ def slot_purchase_keyboard(slots: int, max_slots: int, total_limit: int) -> Inli
         stepper.append(InlineKeyboardButton(text="➕", callback_data=f"slots_qty:{slots + 1}"))
     builder.row(*stepper)
 
-    builder.row(InlineKeyboardButton(text="💳 Оплатить картой", callback_data=f"slots_pay:card:{slots}"))
-    builder.row(InlineKeyboardButton(text="🏦 Оплатить через СБП", callback_data=f"slots_pay:sbp:{slots}"))
+    builder.row(InlineKeyboardButton(
+        text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"slots_pay:platega:{slots}"
+    ))
     builder.row(InlineKeyboardButton(text="📄 Документы и тарифы", callback_data="documents"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад к устройствам", callback_data="my_devices"))
     return builder.as_markup()
 
 
-def slot_invoice_keyboard(payment_url: str | None, slots: int = 1) -> InlineKeyboardMarkup:
+def slot_invoice_keyboard(payment_url: str | None, slots: int = 1,
+                          *, total_amount: float) -> InlineKeyboardMarkup:
     """Счёт на докупку устройств: оплатить, отменить и вернуться к списку.
 
     Пользователь может закрыть счет локально и выбрать другой способ оплаты.
     """
     builder = InlineKeyboardBuilder()
     if payment_url:
-        builder.button(text="💳 Оплатить", url=payment_url)
+        builder.button(text=f"💳 Оплатить {total_amount:.2f} ₽", url=payment_url)
     builder.button(text="📄 Документы и тарифы", callback_data="documents")
     builder.button(text="❌ Отменить счёт", callback_data=f"slots_cancel_invoice:{slots}")
     builder.button(text="⬅️ К устройствам", callback_data="my_devices")

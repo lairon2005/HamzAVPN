@@ -40,7 +40,7 @@ def _render_quote(quote) -> str:
         "➕ <b>Дополнительные устройства</b>\n\n"
         f"Сейчас доступно: <b>{current_limit}</b> {_plural_devices(current_limit)}\n"
         f"Станет: <b>{quote.total_limit}</b> {_plural_devices(quote.total_limit)}\n\n"
-        f"💰 К оплате: <b>{quote.price:.0f} ₽</b>\n"
+        f"💰 К оплате: <b>{quote.price:.2f} ₽</b>\n"
         f"<i>{quote.slots} × {quote.price_per_slot} ₽ за оставшиеся "
         f"{quote.remaining_days} дн. подписки</i>\n\n"
         "При продлении подписки доп. устройства автоматически войдут в счёт "
@@ -61,7 +61,9 @@ async def _show_purchase_screen(call: CallbackQuery, slots: int) -> None:
     await replace_message_text(
         call.message,
         _render_quote(quote),
-        reply_markup=slot_purchase_keyboard(quote.slots, quote.available, quote.total_limit),
+        reply_markup=slot_purchase_keyboard(
+            quote.slots, quote.available, quote.total_limit, total_amount=quote.price
+        ),
     )
 
 
@@ -97,10 +99,9 @@ async def _show_pending_invoice(call: CallbackQuery, pending, slots: int) -> Non
     await replace_message_text(
         call.message,
         f"⏳ <b>У вас уже есть неоплаченный счёт</b> на {subject}.\n\n"
-        f"Сумма: <b>{pending.final_amount:.0f} ₽</b>\n\n"
-        "Оплатите его — или отмените, чтобы выставить новый счёт "
-        "и выбрать другой способ оплаты.",
-        reply_markup=slot_invoice_keyboard(payment_url, slots),
+        f"Сумма: <b>{pending.final_amount:.2f} ₽</b>\n\n"
+        "Оплатите его — или отмените, чтобы получить новую ссылку Platega.",
+        reply_markup=slot_invoice_keyboard(payment_url, slots, total_amount=pending.final_amount),
     )
 
 
@@ -135,8 +136,7 @@ async def pay_slots_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer()
 
     user_id = call.from_user.id
-    parts = call.data.split(":")  # ['slots_pay', 'card'|'sbp', '<slots>']
-    method = parts[1] if len(parts) > 1 else "card"
+    parts = call.data.split(":")  # Старые callback 'card' / 'sbp' также поддерживаются.
     try:
         slots = int(parts[2])
     except (IndexError, ValueError):
@@ -159,8 +159,6 @@ async def pay_slots_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
         )
         return
 
-    from database import user_repo
-    user = await user_repo.get(user_id)
     description = f"Дополнительные устройства ({quote.slots} шт., {quote.remaining_days} дн.)"
 
     try:
@@ -177,8 +175,11 @@ async def pay_slots_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
         )
         await replace_message_text(
             call.message,
-            "❌ Не удалось создать счёт. Попробуйте позже или обратитесь в поддержку.",
-            reply_markup=back_to_main_menu_keyboard(),
+            "❌ Оплата временно недоступна. Попробуйте позже или обратитесь в поддержку. "
+            "Документы доступны кнопкой ниже.",
+            reply_markup=slot_purchase_keyboard(
+                quote.slots, quote.available, quote.total_limit, total_amount=quote.price
+            ),
         )
         return
 
@@ -190,9 +191,9 @@ async def pay_slots_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     sent_message = await replace_message_text(
         call.message,
         f"🧾 <b>Счёт на {quote.slots} доп. {_plural_devices(quote.slots)}</b>\n\n"
-        f"Сумма: <b>{quote.price:.0f} ₽</b>\n"
+        f"Сумма: <b>{quote.price:.2f} ₽</b>\n"
         f"После оплаты лимит вырастет до <b>{quote.total_limit}</b> "
         f"{_plural_devices(quote.total_limit)} — сразу, без перевыпуска ключа.",
-        reply_markup=slot_invoice_keyboard(payment_url, quote.slots),
+        reply_markup=slot_invoice_keyboard(payment_url, quote.slots, total_amount=quote.price),
     )
     await state.update_data(payment_message_id=sent_message.message_id)

@@ -227,11 +227,12 @@ class CancelInvoiceTests(unittest.IsolatedAsyncioTestCase):
         services.payment_service.cancel_pending_payment.assert_awaited_once_with(42)
         services.device_slot_service.quote.assert_awaited_once_with(42, 3)
 
-        # Человек снова на экране выбора способа оплаты — ради этого и отменял.
+        # Человек снова может получить ссылку Platega — ради этого и отменял.
         _, kwargs = call.message.edit_text.call_args
         callbacks = _callback_data(kwargs["reply_markup"])
-        self.assertIn("slots_pay:card:3", callbacks)
-        self.assertIn("slots_pay:sbp:3", callbacks)
+        self.assertIn("slots_pay:platega:3", callbacks)
+        buttons = [button for row in kwargs["reply_markup"].inline_keyboard for button in row]
+        self.assertIn("💳 Оплатить 200.00 ₽", [button.text for button in buttons])
 
     async def test_cancel_without_pending_does_not_crash(self):
         """Счёт мог оплатиться или отмениться сам, пока человек жал кнопку."""

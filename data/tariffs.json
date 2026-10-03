@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Неделя",
+    "price": 67,
+    "duration_days": 7,
+    "is_active": true,
+    "data_limit_gb": 100,
+    "loyalty_price": null,
+    "is_highlighted": false,
+    "price_stars": null
+  },
+  {
+    "name": "Месяц",
+    "price": 129,
+    "duration_days": 30,
+    "is_active": true,
+    "data_limit_gb": 500,
+    "loyalty_price": null,
+    "is_highlighted": true,
+    "price_stars": null
+  },
+  {
+    "name": "3 месяца",
+    "price": 299,
+    "duration_days": 90,
+    "is_active": true,
+    "data_limit_gb": 500,
+    "loyalty_price": null,
+    "is_highlighted": false,
+    "price_stars": null
+  },
+  {
+    "name": "Полгода",
+    "price": 549,
+    "duration_days": 180,
+    "is_active": true,
+    "data_limit_gb": 500,
+    "loyalty_price": null,
+    "is_highlighted": false,
+    "price_stars": null
+  },
+  {
+    "name": "Год",
+    "price": 999,
+    "duration_days": 365,
+    "is_active": true,
+    "data_limit_gb": 500,
+    "loyalty_price": null,
+    "is_highlighted": false,
+    "price_stars": null
+  },
+  {
+    "name": "Пробная неделя",
+    "price": 1,
+    "duration_days": 7,
+    "is_active": true,
+    "data_limit_gb": 100,
+    "loyalty_price": null,
+    "is_highlighted": false,
+    "price_stars": null
+  }
+]

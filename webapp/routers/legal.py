@@ -59,4 +59,5 @@ async def tariffs(request: Request):
         unavailable = True
     return templates.TemplateResponse(request=request, name="public/tariffs.html", context=context(
         request, "Тарифы и цены", tariffs=rows, unavailable=unavailable,
+        purchase_url=(telegram_support_url(config.tg_bot.tg_bot_username) or "").replace("?start=support", "?start=tariffs") or "/register",
     ))

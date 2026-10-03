@@ -4,7 +4,7 @@ from html import escape
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from database import tariff_repo
 from loader import logger
@@ -12,7 +12,7 @@ from tgbot.keyboards.inline import legal_menu_keyboard
 from tgbot.services import device_slot_service
 from utils.legal import (
     DOCUMENT_DATE, PRIVACY, TERMS, REVIEW_PHRASE,
-    document_messages, platega_review_mode, public_tariff_rows,
+    document_messages, document_plaintext, platega_review_mode, public_tariff_rows,
 )
 from utils.telegram_ui import replace_message_text
 
@@ -20,13 +20,14 @@ legal_router = Router(name="legal")
 
 
 async def show_documents(event: Message | CallbackQuery, state: FSMContext):
-    await state.clear()
+    await state.set_state(None)
     text = (
         "📄 <b>Документы и тарифы HamzAVPN</b>\n\n"
         f"Редакция документов: {DOCUMENT_DATE}.\n"
         "Перед оплатой доступны условия услуги, правила обработки данных и действующие цены в RUB.\n\n"
         "💬 Поддержка — личный тикет внутри бота. Нажмите «Поддержка» или отправьте /support; вступать в группу не требуется.\n\n"
-        "Документы всегда можно открыть командой /documents и кнопкой в главном меню."
+        "Полные документы отправляются прямо в этот чат: весь текст по частям и файл для сохранения. "
+        "Открыть их можно в любое время командой /documents и кнопкой в главном меню."
     )
     if platega_review_mode():
         text += f"\n\n{REVIEW_PHRASE}"
@@ -48,13 +49,23 @@ async def documents_callback(call: CallbackQuery, state: FSMContext):
 
 
 async def send_document(event: Message | CallbackQuery, state: FSMContext, document):
-    await state.clear()
+    await state.set_state(None)
     message = event.message if isinstance(event, CallbackQuery) else event
     if isinstance(event, CallbackQuery):
         await event.answer()
     parts = document_messages(document)
-    for index, text in enumerate(parts):
-        await message.answer(text, reply_markup=legal_menu_keyboard() if index == len(parts) - 1 else None)
+    for text in parts:
+        await message.answer(text, reply_markup=legal_menu_keyboard())
+    document_name = "privacy" if document is PRIVACY else "terms"
+    revision = "-".join(reversed(DOCUMENT_DATE.split(".")))
+    await message.answer_document(
+        BufferedInputFile(
+            document_plaintext(document).encode("utf-8"),
+            filename=f"hamzavpn-{document_name}-{revision}.txt",
+        ),
+        caption=f"{document.title} — HamzAVPN\nПолный текст для сохранения. Редакция: {DOCUMENT_DATE}.",
+        reply_markup=legal_menu_keyboard(),
+    )
 
 
 @legal_router.message(Command("privacy"))
@@ -78,7 +89,7 @@ async def terms_callback(call: CallbackQuery, state: FSMContext):
 
 
 async def show_tariffs(event: Message | CallbackQuery, state: FSMContext):
-    await state.clear()
+    await state.set_state(None)
     message = event.message if isinstance(event, CallbackQuery) else event
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -108,7 +119,7 @@ async def show_tariffs(event: Message | CallbackQuery, state: FSMContext):
     if platega_review_mode():
         intro += f"\n\n{REVIEW_PHRASE}"
     await message.answer(intro)
-    for index, row in enumerate(rows):
+    for tariff, row in zip(active_tariffs, rows):
         text = (
             f"<b>{escape(row['name'])}</b>\n"
             f"Цена: <b>{row['price']} RUB</b>\n"
@@ -122,7 +133,13 @@ async def show_tariffs(event: Message | CallbackQuery, state: FSMContext):
             text += f"\nВ Telegram без дополнительных устройств: {row['price_stars']} XTR (Telegram Stars), если способ доступен."
         if row["max_extra"] > 0:
             text += f"\nДополнительное устройство на срок тарифа: {row['extra_price']} RUB (до {row['max_extra']} дополнительных устройств)."
-        await message.answer(text, reply_markup=legal_menu_keyboard() if index == len(rows) - 1 else None)
+        text += "\n\nНажмите «Оплатить», чтобы проверить состав заказа и итоговую сумму перед переходом к оплате."
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"💳 Оплатить {row['price']} ₽", callback_data=f"select_tariff_{tariff.id}")],
+            [InlineKeyboardButton(text="📄 Документы и тарифы", callback_data="documents")],
+            [InlineKeyboardButton(text="💬 Личная поддержка", callback_data="support_chat_start")],
+        ])
+        await message.answer(text, reply_markup=keyboard)
 
 
 @legal_router.message(Command("tariffs"))

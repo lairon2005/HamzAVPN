@@ -1,6 +1,7 @@
 # tgbot/handlers/user/payment.py
 
 from datetime import datetime
+from html import escape
 
 from aiogram import Router, F, Bot
 from aiogram.fsm.context import FSMContext
@@ -275,21 +276,22 @@ async def _show_pending_invoice(call: CallbackQuery, pending) -> None:
 
     existing_url = pending.payment_url
 
-    price_text = f"<b>{pending.final_amount} RUB</b>"
+    price_text = f"<b>{pending.final_amount:.2f} ₽</b>"
     if pending.discount_percent:
         price_text = (
-            f"<s>{pending.original_amount} RUB</s>\n"
-            f"Скидка {pending.discount_percent}% ({pending.promo_code}): <b>{pending.final_amount} RUB</b>"
+            f"<s>{pending.original_amount:.2f} ₽</s>\n"
+            f"Скидка {pending.discount_percent}% ({escape(pending.promo_code or 'промокод')}): <b>{pending.final_amount:.2f} ₽</b>"
         )
 
     kb = InlineKeyboardBuilder()
     if existing_url:
-        kb.button(text="💳 Перейти к оплате", url=existing_url)
+        kb.button(text=f"💳 Оплатить {pending.final_amount:.2f} ₽", url=existing_url)
+    kb.button(text="📄 Документы и тарифы", callback_data="documents")
     kb.button(text="❌ Отменить платёж", callback_data="cancel_pending_payment")
     kb.button(text="⬅️ Назад", callback_data="buy_subscription")
     kb.adjust(1)
 
-    lines = ["⏳ У вас уже есть неоплаченный счёт:\n\n", f"Тариф: <b>{tariff_name}</b>\n"]
+    lines = ["⏳ У вас уже есть неоплаченный счёт:\n\n", f"Тариф: <b>{escape(tariff_name)}</b>\n"]
     if not is_devices_invoice:
         lines.append(f"Срок: <b>{tariff_days} дней</b>\n")
     lines.append(f"Сумма: {price_text}\n\n")
@@ -298,26 +300,15 @@ async def _show_pending_invoice(call: CallbackQuery, pending) -> None:
     await call.message.edit_text("".join(lines), reply_markup=kb.as_markup())
 
 
-def _compute_price(
-    tariff, discount_percent: int | None, promo_code: str | None,
-    user_has_active_sub: bool = False,
-):
-    """Возвращает (original_price, final_price, price_text) с учётом лоялти-цены и скидки.
-
-    original_price — эффективная цена тарифа (лоялти-цена, если применима) ДО промо-скидки.
-    Промо-скидка накладывается поверх неё.
-    """
-    original_price = effective_price(tariff, user_has_active_sub)
-    final_price = original_price
+def _checkout_price_text(checkout, discount_percent: int | None, promo_code: str | None) -> str:
+    """Описание суммы из того же расчёта, который отправляется в Platega."""
     if discount_percent:
-        final_price = round(original_price * (1 - discount_percent / 100), 2)
-        price_text = (
-            f"<s>{original_price} RUB</s>\n"
-            f"Скидка {discount_percent}% ({promo_code}): <b>{final_price} RUB</b>"
+        return (
+            f"<s>{checkout.tariff_original:.2f} ₽</s>\n"
+            f"Скидка {discount_percent}% ({escape(promo_code or 'промокод')}): "
+            f"<b>{checkout.tariff_final:.2f} ₽</b>"
         )
-    else:
-        price_text = f"<b>{original_price} RUB</b>"
-    return original_price, final_price, price_text
+    return f"<b>{checkout.tariff_final:.2f} ₽</b>"
 
 
 async def _create_and_send_payment(
@@ -339,22 +330,21 @@ async def _create_and_send_payment(
     promo_code = fsm_data.get("promo_code")
     user_has_active_sub = await _user_has_active_sub(user_id)
 
-    original_price, final_price, price_text = _compute_price(
-        tariff, discount_percent, promo_code, user_has_active_sub
-    )
+    original_price = effective_price(tariff, user_has_active_sub)
 
     device_settings = await device_slot_service.settings()
     slots = max(0, min(device_settings.max_extra, slots))
     checkout = build_checkout(
         device_settings, original_price, tariff.duration_days, slots, discount_percent or 0
     )
+    price_text = _checkout_price_text(checkout, discount_percent, promo_code)
     if checkout.has_slots:
         price_text += (
             f"\n+ {checkout.slots} доп. "
             f"{'устройство' if checkout.slots == 1 else 'устройства'} "
             f"({device_settings.price} ₽ × {checkout.months} мес): "
-            f"<b>{checkout.slots_cost:.0f} RUB</b>\n"
-            f"Итого: <b>{checkout.total:.2f} RUB</b>"
+            f"<b>{checkout.slots_cost:.2f} ₽</b>\n"
+            f"Итого: <b>{checkout.total:.2f} ₽</b>"
         )
 
     try:
@@ -373,9 +363,12 @@ async def _create_and_send_payment(
             exc_info=True,
         )
         await call.message.edit_text(
-            "❌ Не удалось создать платёж. Попробуйте другой способ оплаты "
-            "или повторите позже.",
-            reply_markup=back_to_main_menu_keyboard(),
+            "❌ Оплата временно недоступна. Попробуйте позже или обратитесь в поддержку. "
+            "Документы доступны кнопкой ниже.",
+            reply_markup=tariff_slots_keyboard(
+                tariff.id, slots, device_settings.max_extra, device_settings.base_limit,
+                total_amount=checkout.total,
+            ),
         )
         return
 
@@ -387,14 +380,18 @@ async def _create_and_send_payment(
     )
 
     payment_kb = InlineKeyboardBuilder()
-    payment_kb.button(text="💳 Перейти к оплате", url=payment_url)
+    payment_kb.button(text=f"💳 Оплатить {checkout.total:.2f} ₽", url=payment_url)
+    payment_kb.button(text="📄 Документы и тарифы", callback_data="documents")
     payment_kb.button(text="❌ Отменить платёж", callback_data="cancel_pending_payment")
     payment_kb.button(text="⬅️ Назад к выбору тарифа", callback_data="buy_subscription")
     payment_kb.adjust(1)
 
     sent_message = await call.message.edit_text(
-        f"Вы выбрали тариф: <b>{tariff.name}</b>\n"
-        f"Срок: <b>{tariff.duration_days} дней</b>\n\n"
+        f"Вы выбрали тариф: <b>{escape(tariff.name)}</b>\n"
+        f"Срок: <b>{tariff.duration_days} дней</b>\n"
+        f"Трафик: <b>{format_quota(tariff.data_limit_gb)}</b>\n"
+        f"Устройств: <b>{device_settings.base_limit + slots}</b> "
+        f"({device_settings.base_limit} входят в тариф, {slots} дополнительных)\n\n"
         f"Сумма к оплате: {price_text}\n\n"
         "Оплачивая, вы принимаете Пользовательское соглашение и ознакомлены "
         "с Политикой конфиденциальности. Документы доступны в меню.\n\n"
@@ -412,15 +409,14 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
     promo_code = fsm_data.get("promo_code")
     user_has_active_sub = await _user_has_active_sub(user_id)
 
-    original_price, _, price_text = _compute_price(
-        tariff, discount_percent, promo_code, user_has_active_sub
-    )
+    original_price = effective_price(tariff, user_has_active_sub)
 
     device_settings = await device_slot_service.settings()
     slots = max(0, min(device_settings.max_extra, slots))
     checkout = build_checkout(
         device_settings, original_price, tariff.duration_days, slots, discount_percent or 0
     )
+    price_text = _checkout_price_text(checkout, discount_percent, promo_code)
 
     devices_line = f"Устройств: <b>{device_settings.base_limit}</b> (входит в тариф)"
     total_line = ""
@@ -431,12 +427,12 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
         )
         total_line = (
             f"\n+ Доп. устройства: {slots} × {device_settings.price} ₽ × "
-            f"{checkout.months} мес = <b>{checkout.slots_cost:.0f} RUB</b>\n"
-            f"<b>Итого: {checkout.total:.2f} RUB</b>"
+            f"{checkout.months} мес = <b>{checkout.slots_cost:.2f} ₽</b>\n"
+            f"<b>Итого: {checkout.total:.2f} ₽</b>"
         )
 
     await call.message.edit_text(
-        f"Вы выбрали тариф: <b>{tariff.name}</b>\n"
+        f"Вы выбрали тариф: <b>{escape(tariff.name)}</b>\n"
         f"Срок: <b>{tariff.duration_days} дней</b>\n"
         f"Трафик: <b>{format_quota(tariff.data_limit_gb)}</b>\n"
         f"{devices_line}\n\n"
@@ -445,7 +441,8 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
         f"{device_settings.price} ₽ в месяц, оплачивается вместе с подпиской.\n"
         f"<i>Трафик общий на аккаунт и от количества устройств не меняется.</i>",
         reply_markup=tariff_slots_keyboard(
-            tariff.id, slots, device_settings.max_extra, device_settings.base_limit
+            tariff.id, slots, device_settings.max_extra, device_settings.base_limit,
+            total_amount=checkout.total,
         ),
     )
 
@@ -525,7 +522,6 @@ async def select_payment_method_handler(call: CallbackQuery, state: FSMContext, 
 
     user_id = call.from_user.id
     parts = call.data.split("_")  # ['paymethod', 'card'|'sbp', '<tariff_id>', '<slots>']
-    method = parts[1]
     tariff_id = int(parts[2])
     # Старые сообщения (до появления доп. устройств) приходят без слотов.
     slots = int(parts[3]) if len(parts) > 3 else 0

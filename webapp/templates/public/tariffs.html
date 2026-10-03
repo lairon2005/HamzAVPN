@@ -25,12 +25,12 @@
                 {% if tariff.loyalty_price %}<p class="small">При оплате продления до окончания действующей подписки: {{ tariff.loyalty_price }} RUB.</p>{% endif %}
                 {% if tariff.price_stars %}<p class="small">В Telegram без дополнительных устройств: {{ tariff.price_stars }} XTR (Telegram Stars), если этот способ доступен.</p>{% endif %}
                 {% if tariff.max_extra > 0 %}<p class="small text-secondary">Дополнительное устройство на срок тарифа: {{ tariff.extra_price }} RUB. Можно добавить до {{ tariff.max_extra }} устройств.</p>{% endif %}
+                <a class="btn btn-brand mt-auto" href="{{ purchase_url }}">Оплатить {{ tariff.price }} ₽</a>
             </div>
         </div>
         {% endfor %}
     </div>
     <p class="mt-4">Скидки по промокодам, выбранные дополнительные устройства и итоговая сумма показываются перед оплатой. При докупке устройства в действующей подписке цена рассчитывается до ее окончания, но не ниже месячной стоимости.</p>
-    <a class="btn btn-brand me-2" href="/register">Оформить подписку</a>
     {% if support_url %}<a class="btn btn-outline-light" href="{{ support_url }}">Открыть бот</a>{% endif %}
     {% endif %}
     <p class="small mt-4">Условия услуги: <a href="/terms">Пользовательское соглашение</a> · <a href="/privacy">Политика конфиденциальности</a> · <a href="/support">Личная поддержка</a></p>

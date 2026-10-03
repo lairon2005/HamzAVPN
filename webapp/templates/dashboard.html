@@ -413,8 +413,8 @@
                                     </ul>
                                     <button type="button" data-payment-tariff="{{ tariff.name }}" data-payment-price="{{ tariff.price }}"
                                     onclick="initPayment(this.dataset.paymentTariff, this.dataset.paymentPrice, this)"
-                                            class="btn {% if is_popular %}btn-brand{% else %}btn-brand-outline{% endif %} mt-auto w-100">
-                                        <span class="btn-text">Купить</span>
+                                            class="btn {% if is_popular %}btn-brand{% else %}btn-brand-outline{% endif %} mt-auto w-100" disabled>
+                                        <span class="btn-text">Оплатить {{ "%.2f"|format(tariff_prices.get(tariff.id, tariff.price) if tariff_prices else tariff.price) }} ₽</span>
                                     </button>
                                 </div>
                             </div>

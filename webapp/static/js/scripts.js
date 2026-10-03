@@ -126,6 +126,8 @@ async function initPayment(tariffName, price, btn, allowCancelRetry = true) {
             if (!confirm('Итоговая стоимость обновилась: ' + formatRubAmount(quote.final_amount) + ' ₽. Перейти к оплате?')) return;
         }
         btn.dataset.quotedAmount = quote.final_amount;
+        const label = btn.querySelector(".btn-text");
+        if (label) label.textContent = "Оплатить " + formatRubAmount(quote.final_amount) + " ₽";
         const response = await fetch('/payment/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -309,6 +311,8 @@ async function renderTariffPrices(discountPercent) {
             }
             if (button) {
                 button.dataset.quotedAmount = quote.final_amount;
+                const label = button.querySelector(".btn-text");
+                if (label) label.textContent = "Оплатить " + formatRubAmount(quote.final_amount) + " ₽";
                 button.disabled = false;
             }
         } catch (error) {
