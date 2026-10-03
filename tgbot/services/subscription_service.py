@@ -86,6 +86,9 @@ class SubscriptionService:
         if rw_uuid:
             existing = await self._remnawave.get_user_by_username(username)
             if existing:
+                # После обновления панели UUID v2 может смениться numeric ID v3.
+                # Берём текущую ссылку на пользователя из свежего API-ответа.
+                rw_uuid = existing.get("uuid") or rw_uuid
                 # Продлеваем от текущей даты истечения (не от "сейчас"), чтобы не терять
                 # уже оплаченные дни при повторном продлении до истечения срока.
                 base = datetime.now(timezone.utc)

@@ -47,6 +47,20 @@ def load_subscription_service_module():
 
 
 class SubscriptionServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_extension_refreshes_stored_v2_uuid_to_v3_reference(self):
+        module = load_subscription_service_module()
+        user = SimpleNamespace(user_id=123, vpn_username="user_123", remnawave_uuid="old-v2-uuid")
+        user_repo = SimpleNamespace(get=AsyncMock(return_value=user),
+            update_vpn_username=AsyncMock(), update_remnawave_uuid=AsyncMock(),
+            extend_subscription=AsyncMock())
+        remnawave = SimpleNamespace(get_user_by_username=AsyncMock(return_value={
+            "id": 42, "uuid": "42", "expireAt": "2030-01-01T00:00:00.000Z"}),
+            update_user=AsyncMock(), reset_user_traffic=AsyncMock())
+        await module.SubscriptionService(user_repo, remnawave).extend(123, 3, data_limit_gb=100)
+        self.assertEqual(remnawave.update_user.await_args.args, ("42",))
+        remnawave.reset_user_traffic.assert_awaited_once_with("42")
+        user_repo.update_remnawave_uuid.assert_awaited_once_with(123, "42")
+
     async def test_new_trial_user_gets_default_monthly_limit(self):
         module = load_subscription_service_module()
         user = SimpleNamespace(

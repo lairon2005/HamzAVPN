@@ -8,6 +8,31 @@ from payment_test_support import PaymentDatabaseTests
 
 
 class AtomicFulfillmentTests(PaymentDatabaseTests):
+    async def test_panel_numeric_reference_is_persisted_as_text(self):
+        self.panel.get_user_by_username = AsyncMock(return_value={"id": 42, "uuid": "42", "status": "ACTIVE"})
+        await self.repo.sync_user(42, self.panel, 3, 10)
+        user = await self.user()
+        self.assertEqual(user.remnawave_uuid, "42")
+        self.assertIsInstance(user.remnawave_uuid, str)
+        self.assertEqual(self.panel.update_user.await_args.args, ("42",))
+
+    async def test_expired_subscription_disables_without_patching_past_expiry(self):
+        async with self.sessions() as session:
+            await session.execute(update(self.models.User).where(self.models.User.user_id == 42)
+                .values(subscription_end_date=self.now - timedelta(days=1)))
+            await session.commit()
+        self.panel.get_user_by_username = AsyncMock(return_value={"id": 42, "uuid": "42", "status": "ACTIVE"})
+        from unittest.mock import Mock
+        events = Mock()
+        events.attach_mock(self.panel.disable_user, "disable")
+        events.attach_mock(self.panel.update_user, "update")
+        await self.repo.sync_user(42, self.panel, 3, 10)
+        self.panel.disable_user.assert_awaited_once_with("42")
+        self.assertIsNone(self.panel.update_user.await_args.kwargs["expire_at"])
+        self.assertEqual([c[0] for c in events.mock_calls], ["disable", "update"])
+        self.assertLess((await self.user()).subscription_end_date, self.now)
+        self.panel.enable_user.assert_not_awaited()
+
     async def test_confirmed_subscription_and_referral_are_applied_once(self):
         await self.create_invoice(extra_devices=2)
         before = await self.user()

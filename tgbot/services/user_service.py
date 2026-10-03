@@ -25,19 +25,19 @@ class UserService:
         return await self._user_repo.get_by_username(stripped.replace("@", ""))
 
     async def delete_user(self, user_id: int, remnawave: RemnawaveClient) -> bool:
-        """Удаляет пользователя из Remnawave (по UUID) и БД."""
+        """Удаляет пользователя из Remnawave по актуальному ID/UUID и из БД."""
         user = await self._user_repo.get(user_id)
         if not user:
             return False
 
         try:
-            if user.remnawave_uuid:
-                await remnawave.delete_user(user.remnawave_uuid)
-            elif user.vpn_username:
-                # UUID неизвестен (старые записи / рассинхрон) — ищем по имени
+            if user.vpn_username:
+                # Свежая панель может использовать numeric ID вместо UUID v2.
                 rw_user = await remnawave.get_user_by_username(user.vpn_username)
                 if rw_user:
                     await remnawave.delete_user(rw_user["uuid"])
+            elif user.remnawave_uuid:
+                await remnawave.delete_user(user.remnawave_uuid)
         except Exception as e:
             logger.error(f"Failed to delete remnawave user for {user_id}: {e}", exc_info=True)
             return False

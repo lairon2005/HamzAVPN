@@ -500,12 +500,15 @@ class PaymentRepository:
             limit = base_limit + min(max_extra, user.extra_devices or 0) if active else base_limit
             if existing:
                 identifier = existing['uuid']
-                await remnawave.update_user(identifier, expire_at=expiry,
-                    traffic_limit_bytes=byte_limit, traffic_limit_strategy=strategy,
-                    hwid_device_limit=limit)
+                # Remnawave v3 запрещает PATCH expireAt в прошлом. Отключаем
+                # истёкшую подписку до обновления остальных полей; дата в нашей
+                # БД остаётся источником истины при следующей оплате/сверке.
                 if not active:
                     await remnawave.disable_user(identifier)
-                elif existing.get('status') in ('DISABLED', 'EXPIRED', 'LIMITED'):
+                await remnawave.update_user(identifier, expire_at=expiry if active else None,
+                    traffic_limit_bytes=byte_limit, traffic_limit_strategy=strategy,
+                    hwid_device_limit=limit)
+                if active and existing.get('status') in ('DISABLED', 'EXPIRED', 'LIMITED'):
                     await remnawave.enable_user(identifier)
             elif active:
                 created = await remnawave.create_user(username=username, expire_at=expiry,

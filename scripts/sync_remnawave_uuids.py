@@ -1,7 +1,7 @@
 """
 Синхронизирует remnawave_uuid в нашей БД после официальной миграции Remnawave.
-Для каждого пользователя с vpn_username запрашивает его UUID из Remnawave
-и сохраняет в поле remnawave_uuid.
+Для каждого пользователя с vpn_username запрашивает его UUID v2 или ID v3
+из Remnawave и сохраняет строкой в поле remnawave_uuid.
 
 Запускать ПОСЛЕ официальной миграции Remnawave из Remnawave.
 
@@ -41,10 +41,10 @@ async def main(dry_run: bool = False):
     conn = await asyncpg.connect(dsn)
 
     rows = await conn.fetch(
-        "SELECT user_id, vpn_username FROM users "
-        "WHERE vpn_username IS NOT NULL AND remnawave_uuid IS NULL"
+        "SELECT user_id, vpn_username, remnawave_uuid FROM users "
+        "WHERE vpn_username IS NOT NULL"
     )
-    print(f"Пользователей без remnawave_uuid: {len(rows)}")
+    print(f"Пользователей для сверки идентификатора панели: {len(rows)}")
 
     ok, not_found, fail = 0, 0, 0
 
@@ -58,6 +58,9 @@ async def main(dry_run: bool = False):
                 continue
 
             rw_uuid = rw_user["uuid"]
+            if row["remnawave_uuid"] == rw_uuid:
+                ok += 1
+                continue
             print(f"  {'DRY-RUN: ' if dry_run else ''}OK: {username} → {rw_uuid}")
             ok += 1
 

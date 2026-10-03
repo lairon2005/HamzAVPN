@@ -670,6 +670,34 @@ class RemnawaveClientNodesMetricsTests(unittest.IsolatedAsyncioTestCase):
             "n2": {"cpu_usage": 12.3, "ram_usage": 40.0},
         })
 
+    async def test_current_metrics_path_and_traffic_shape_do_not_fake_cpu_usage(self):
+        client = self.make_client()
+        client._request = AsyncMock(return_value={'response': {'nodes': [{
+            'nodeUuid': 'n1', 'nodeName': 'Example', 'usersOnline': 7,
+            'inboundsStats': [{'tag': 'VPN', 'upload': '120', 'download': '240'}],
+            'outboundsStats': []}]}})
+        self.assertEqual(await client.get_nodes_metrics(), {
+            'n1': {'cpu_usage': None, 'ram_usage': None}})
+        client._request.assert_awaited_once_with('GET', '/api/system/nodes/metrics')
+
+    async def test_metrics_404_falls_back_to_legacy_path(self):
+        client = self.make_client()
+        client._request = AsyncMock(side_effect=[RemnawaveAPIError(404, 'not found'),
+            {'response': {'nodes': [{'nodeUuid': 'n1', 'cpuUsage': 12, 'ramUsage': 34}]}}])
+        self.assertEqual(await client.get_nodes_metrics(), {
+            'n1': {'cpu_usage': 12.0, 'ram_usage': 34.0}})
+        self.assertEqual(client._request.await_args_list, [
+            call('GET', '/api/system/nodes/metrics'), call('GET', '/api/system/nodes-metrics')])
+
+    async def test_metrics_does_not_fall_back_for_auth_or_server_errors(self):
+        client = self.make_client()
+        for status in (401, 403, 500, 503):
+            with self.subTest(status=status):
+                client._request = AsyncMock(side_effect=RemnawaveAPIError(status, 'error'))
+                with self.assertRaises(RemnawaveAPIError):
+                    await client.get_nodes_metrics()
+                client._request.assert_awaited_once_with('GET', '/api/system/nodes/metrics')
+
     async def test_dict_mapping_of_node_key_to_metrics_is_parsed(self):
         client = self.make_client()
         client._request = AsyncMock(return_value={
@@ -720,3 +748,80 @@ class RevokeUserSubscriptionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user["subscriptionUrl"], "https://sub/new")
         client._request.assert_awaited_once_with("POST", "/api/users/u-1/actions/revoke")
 
+
+class RemnawaveVersionCompatibilityTests(unittest.IsolatedAsyncioTestCase):
+    """Реальные форматы HTTP-контрактов v2 и v3 без внешних запросов."""
+
+    def make_client(self, response_user):
+        requests = []
+
+        def handler(request):
+            requests.append(request)
+            return httpx.Response(200, json={"response": response_user})
+
+        client = RemnawaveClient("https://panel.example", "test-token",
+            squad_uuid="squad-test", transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.aclose)
+        return client, requests
+
+    async def test_v3_create_and_lookup_keep_native_id_and_store_string_reference(self):
+        client, requests = self.make_client({"id": 42, "username": "smoke_user",
+            "subscriptionUrl": "https://sub.example/key"})
+        created = await client.create_user(username="smoke_user")
+        found = await client.get_user_by_username("smoke_user")
+        self.assertEqual(created["id"], 42)
+        self.assertEqual(created["uuid"], "42")
+        self.assertEqual(found["uuid"], "42")
+        self.assertEqual(found["subscriptionUrl"], "https://sub.example/key")
+        import json
+        self.assertEqual(json.loads(requests[0].content)["activeInternalSquads"], ["squad-test"])
+
+    async def test_v2_uuid_wins_even_when_response_also_has_numeric_id(self):
+        client, requests = self.make_client({"uuid": "legacy-uuid", "id": 42})
+        user = await client.get_user_by_username("smoke_user")
+        await client.update_user(user["uuid"], hwid_device_limit=3)
+        import json
+        body = json.loads(requests[-1].content)
+        self.assertEqual(body, {"uuid": "legacy-uuid", "hwidDeviceLimit": 3})
+
+    async def test_v3_update_uses_numeric_id_and_actions_use_that_reference(self):
+        client, requests = self.make_client({"id": 42, "status": "ACTIVE"})
+        updated = await client.update_user("42", expire_at="2030-01-01T00:00:00.000Z",
+            traffic_limit_bytes=1024, traffic_limit_strategy="MONTH", hwid_device_limit=3)
+        self.assertEqual(updated["uuid"], "42")
+        import json
+        self.assertEqual(json.loads(requests[0].content), {"id": 42,
+            "expireAt": "2030-01-01T00:00:00.000Z", "trafficLimitBytes": 1024,
+            "trafficLimitStrategy": "MONTH", "hwidDeviceLimit": 3})
+        for action in (client.disable_user, client.enable_user,
+                       client.reset_user_traffic, client.revoke_user_subscription):
+            self.assertEqual((await action("42"))["uuid"], "42")
+        await client.delete_user("42")
+        self.assertEqual([r.url.path for r in requests[1:]], [
+            "/api/users/42/actions/disable", "/api/users/42/actions/enable",
+            "/api/users/42/actions/reset-traffic", "/api/users/42/actions/revoke",
+            "/api/users/42"])
+
+    async def test_v3_hwid_delete_bodies_use_numeric_user_id(self):
+        client, requests = self.make_client({"devices": []})
+        await client.get_user_devices("42")
+        await client.delete_user_device("42", "test-hwid")
+        await client.delete_all_user_devices("42")
+        import json
+        self.assertEqual(requests[0].url.path, "/api/hwid/devices/42")
+        self.assertEqual(json.loads(requests[1].content), {"userId": 42, "hwid": "test-hwid"})
+        self.assertEqual(json.loads(requests[2].content), {"userId": 42})
+
+    async def test_v2_hwid_delete_bodies_keep_user_uuid(self):
+        client, requests = self.make_client({"devices": []})
+        await client.delete_user_device("legacy-uuid", "test-hwid")
+        await client.delete_all_user_devices("legacy-uuid")
+        import json
+        self.assertEqual(json.loads(requests[0].content), {"userUuid": "legacy-uuid", "hwid": "test-hwid"})
+        self.assertEqual(json.loads(requests[1].content), {"userUuid": "legacy-uuid"})
+
+    async def test_v3_list_normalizes_each_user(self):
+        client, _ = self.make_client({})
+        client._request = AsyncMock(return_value={"response": {
+            "users": [{"id": 42}, {"id": 43}], "total": 2}})
+        self.assertEqual([u["uuid"] for u in await client.get_all_users()], ["42", "43"])

@@ -237,6 +237,26 @@ def _safe_int_or_none(value: Any) -> int | None:
         return None
 
 
+def _normalize_user(user: dict) -> dict:
+    """Сохраняет строковый идентификатор для БД и сервисов обеих версий API.
+
+    В v2 ответ содержит uuid и id, а мутации используют UUID. В v3 uuid
+    удалён из ответа, мутации используют числовой id. Историческое поле
+    remnawave_uuid в нашей БД остаётся строковым и хранит любой из них.
+    """
+    if not user.get("uuid") and user.get("id") is not None:
+        user = {**user, "uuid": str(user["id"])}
+    return user
+
+
+def _user_reference_payload(user_reference: str | int, *, hwid: bool = False) -> dict:
+    """Выбирает контракт мутации по сохранённому идентификатору пользователя."""
+    reference = str(user_reference)
+    if reference.isascii() and reference.isdecimal():
+        return {"userId" if hwid else "id": int(reference)}
+    return {"userUuid" if hwid else "uuid": reference}
+
+
 def _find_metric_value(entry: dict, substrings: tuple[str, ...]) -> float | None:
     """Ищет в entry первое поле, чей ключ содержит одну из подстрок
     (регистронезависимо), и безопасно приводит его значение к float."""
@@ -592,7 +612,7 @@ class RemnawaveClient:
             payload["description"] = description
 
         resp = await self._request("POST", "/api/users", json=payload)
-        user = resp.get("response", resp)
+        user = _normalize_user(resp.get("response", resp))
         logger.info(
             "[remnawave] user created: username=%s uuid=%s squad=%s",
             username, user.get("uuid"), self._squad_uuid or "—",
@@ -612,7 +632,7 @@ class RemnawaveClient:
         """Возвращает пользователя по username или None если не найден."""
         try:
             resp = await self._request("GET", f"/api/users/by-username/{username}")
-            return resp.get("response", resp)
+            return _normalize_user(resp.get("response", resp))
         except RemnawaveAPIError as e:
             if e.status == 404:
                 return None
@@ -646,7 +666,7 @@ class RemnawaveClient:
         `база + слоты`, а при смене базы прогонять всех, у кого поле заполнено
         (это делает джоб sync_device_limits).
         """
-        payload: dict[str, Any] = {"uuid": user_uuid}
+        payload: dict[str, Any] = _user_reference_payload(user_uuid)
         if expire_at is not None:
             payload["expireAt"] = expire_at
         if traffic_limit_bytes is not None:
@@ -657,7 +677,7 @@ class RemnawaveClient:
             payload["hwidDeviceLimit"] = hwid_device_limit
 
         resp = await self._request("PATCH", "/api/users", json=payload)
-        user = resp.get("response", resp)
+        user = _normalize_user(resp.get("response", resp))
         logger.info(
             "[remnawave] user updated: uuid=%s expire_at=%s traffic_limit_bytes=%s hwid_limit=%s",
             user_uuid, expire_at, traffic_limit_bytes, hwid_device_limit,
@@ -691,7 +711,7 @@ class RemnawaveClient:
             if not page:
                 break
 
-            users.extend(page)
+            users.extend(_normalize_user(user) for user in page)
             start += len(page)
 
             if total and start >= total:
@@ -702,12 +722,12 @@ class RemnawaveClient:
     async def disable_user(self, user_uuid: str) -> dict:
         """Деактивирует пользователя (без удаления)."""
         resp = await self._request("POST", f"/api/users/{user_uuid}/actions/disable")
-        return resp.get("response", resp)
+        return _normalize_user(resp.get("response", resp))
 
     async def enable_user(self, user_uuid: str) -> dict:
         """Активирует пользователя."""
         resp = await self._request("POST", f"/api/users/{user_uuid}/actions/enable")
-        return resp.get("response", resp)
+        return _normalize_user(resp.get("response", resp))
 
     async def reset_user_traffic(self, user_uuid: str) -> dict:
         """
@@ -721,7 +741,7 @@ class RemnawaveClient:
             allow_empty=True,
         )
         logger.info("[remnawave] user traffic reset: uuid=%s", user_uuid)
-        return resp.get("response", resp) if resp else {}
+        return _normalize_user(resp.get("response", resp)) if resp else {}
 
     async def revoke_user_subscription(self, user_uuid: str) -> dict:
         """
@@ -742,7 +762,7 @@ class RemnawaveClient:
         смогут. Освобождать слоты нужно отдельно — delete_all_user_devices().
         """
         resp = await self._request("POST", f"/api/users/{user_uuid}/actions/revoke")
-        user = resp.get("response", resp)
+        user = _normalize_user(resp.get("response", resp))
         logger.info("[remnawave] subscription revoked: uuid=%s", user_uuid)
         return user
 
@@ -773,7 +793,7 @@ class RemnawaveClient:
         resp = await self._request(
             "POST",
             "/api/hwid/devices/delete",
-            json={"userUuid": user_uuid, "hwid": hwid},
+            json={**_user_reference_payload(user_uuid, hwid=True), "hwid": hwid},
         )
         logger.info("[remnawave] hwid device deleted: uuid=%s hwid=%s", user_uuid, hwid)
         return (resp.get("response") or {}).get("devices", [])
@@ -783,7 +803,7 @@ class RemnawaveClient:
         await self._request(
             "POST",
             "/api/hwid/devices/delete-all",
-            json={"userUuid": user_uuid},
+            json=_user_reference_payload(user_uuid, hwid=True),
             allow_empty=True,
         )
         logger.info("[remnawave] all hwid devices deleted: uuid=%s", user_uuid)
@@ -929,20 +949,25 @@ class RemnawaveClient:
 
     async def get_nodes_metrics(self) -> dict:
         """
-        Возвращает метрики CPU/RAM по нодам (GET /api/system/nodes-metrics).
+        Читает /api/system/nodes/metrics, при 404 — legacy /nodes-metrics.
 
-        # TODO: точную структуру ответа этого эндпоинта нужно сверить с
-        # реальной панелью — она заметно отличается между версиями Remnawave,
-        # а в некоторых сборках эндпоинт может отсутствовать вовсе. Разбор
-        # ниже — эвристический (по подстрокам 'cpu'/'mem'/'ram' в ключах);
-        # любое несовпадение формата даёт {}, а не исключение.
+        Текущий API отдаёт счётчики трафика inboundsStats/outboundsStats,
+        а CPU/RAM берутся из node.system в get_nodes(). Здесь сохраняется
+        прежний формат результата для старых API: CPU/RAM распознаются,
+        только если эти показатели присутствуют в ответе. Счётчики трафика
+        не интерпретируются как проценты нагрузки.
 
         Возвращает {node_key -> {"cpu_usage": float | None, "ram_usage": float | None}},
         где node_key — uuid ноды если есть, иначе её name. Пустой dict, если
         ответ пуст или формат не распознан. Сетевые/транспортные исключения
         из self._request не перехватываются — их обрабатывает вызывающий код.
         """
-        resp = await self._request("GET", "/api/system/nodes-metrics")
+        try:
+            resp = await self._request("GET", "/api/system/nodes/metrics")
+        except RemnawaveAPIError as exc:
+            if exc.status != 404:
+                raise
+            resp = await self._request("GET", "/api/system/nodes-metrics")
         if not resp:
             return {}
 
