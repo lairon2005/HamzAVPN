@@ -20,9 +20,9 @@ from tgbot.services.pricing import effective_price, format_quota
 def build_tma_url(path: str = "/tma/") -> str:
     """Строит абсолютный URL Telegram Mini App.
 
-    Mini App расположен на поддомене app.{domain}; HTTPS использует стандартный порт 443.
+    Mini App расположен на основном домене; HTTPS использует стандартный порт 443.
     """
-    return f"https://app.{config.webhook.domain}{path}"
+    return f"https://{config.webhook.domain}{path}"
 
 
 def tma_web_app_button(text: str, path: str = "/tma/") -> InlineKeyboardButton:

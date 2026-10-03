@@ -15,7 +15,7 @@ config = load_config()
 db_config = config.dataBase
 DSN = URL.create('postgresql+asyncpg', username=db_config.user, password=db_config.password,
                  host=db_config.host, port=int(db_config.port), database=db_config.db_name)
-SYNC_DSN = URL.create('postgresql', username=db_config.user, password=db_config.password,
+SYNC_DSN = URL.create('postgresql+psycopg2', username=db_config.user, password=db_config.password,
                      host=db_config.host, port=int(db_config.port), database=db_config.db_name)
 
 # Создаем асинхронный "движок" и фабрику сессий
@@ -215,5 +215,8 @@ class AppSetting(Base):
 def setup_database_sync():
     """Создает таблицы синхронно при старте бота."""
     engine = create_engine(SYNC_DSN)
-    Base.metadata.create_all(engine)
+    try:
+        Base.metadata.create_all(engine)
+    finally:
+        engine.dispose()
     print("INFO: Database tables created or already exist via SQLAlchemy.")

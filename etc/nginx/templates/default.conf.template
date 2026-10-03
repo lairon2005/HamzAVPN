@@ -1,7 +1,7 @@
 server {
     listen 80;
     listen [::]:80;
-    server_name $DOMAIN app.$DOMAIN;
+    server_name $DOMAIN;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -49,30 +49,6 @@ server {
             return 503;
         }
         return 302 https://$subscription_host/$1$is_args$args;
-    }
-    location / {
-        proxy_pass http://vpn_site:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-# Для отдельного адреса Mini App сертификат должен включать app.$DOMAIN.
-server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    server_name app.$DOMAIN;
-
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_session_tickets off;
-
-    location = / {
-        return 302 /tma/;
     }
     location / {
         proxy_pass http://vpn_site:8000;

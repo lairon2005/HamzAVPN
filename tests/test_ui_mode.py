@@ -128,6 +128,7 @@ class MainMenuModeTests(unittest.TestCase):
         self.assertTrue(targets["👥 Пригласить друга"].endswith("/tma/referral"))
         self.assertTrue(targets["💬 Поддержка"].endswith("/tma/support"))
         self.assertNotIn(":443", targets["💬 Поддержка"])
+        self.assertTrue(targets["💬 Поддержка"].startswith("https://example.com/tma/"))
 
     def test_bot_only_scenarios_stay_callbacks_in_tma_mode(self):
         # Триал требует проверки подписки на каналы через Bot API, привязка email —

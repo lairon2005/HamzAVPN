@@ -6,8 +6,8 @@ Telegram-бот, личный кабинет и Mini App для управлен
 
 1. Скопируйте `env.dist` в `.env` и заполните поля локально.
 2. Создайте отдельного бота в BotFather; заполните `BOT_TOKEN`, `TG_BOT_USERNAME` и `ADMINS`. Для личных тикетов задайте служебный форум через `SUPPORT_CHAT_ID`; пользователи общаются с ботом, ссылка на служебную группу им не требуется.
-3. Задайте собственные `DOMAIN`, `REMNAWAVE_SUB_HOST` и параметры Remnawave. Для Mini App настройте `app.DOMAIN` и приложение в BotFather; `UI_MODE=tma` включает Mini App, `bot` — обычное меню.
-4. Установите доверенный TLS-сертификат для `DOMAIN` и `app.DOMAIN`. В `CERT_DIR` укажите каталог с `fullchain.pem` и `privkey.pem`. При использовании симлинков их цели должны находиться внутри смонтированного каталога. После обновления сертификатов перечитайте nginx: `docker compose exec nginx nginx -s reload`.
+3. Задайте собственные `DOMAIN`, `REMNAWAVE_SUB_HOST` и параметры Remnawave. Для Mini App настройте приложение в BotFather; `UI_MODE=tma` включает Mini App, `bot` — обычное меню. Mini App доступен на `/tma/` основного домена.
+4. Установите доверенный TLS-сертификат для `DOMAIN`. В `CERT_DIR` укажите каталог с `fullchain.pem` и `privkey.pem`. При использовании симлинков их цели должны находиться внутри смонтированного каталога. После обновления сертификатов перечитайте nginx: `docker compose exec nginx nginx -s reload`.
 5. Сгенерируйте отдельный `SECRET_KEY`, заполните пароль новой базы и SMTP-параметры.
    SMTP требуется только для регистрации и восстановления доступа по email; без него публичные страницы и бот работают.
 6. Получите данные Platega в её личном кабинете и заполните `PLATEGA_MERCHANT_ID`, `PLATEGA_SECRET`.
@@ -36,4 +36,4 @@ docker compose logs --tail=100 vpn_bot vpn_site nginx
 
 Для разработки с настроенной локальной базой: `python3 -m bot` (`USE_WEBHOOK=False`) и `uvicorn webapp.main:app --reload`. В обоих режимах callback Platega принимает бот на внутреннем порту 8081; наружу его проксирует nginx.
 
-Инструкции: [интеграция Platega](docs/platega.md), [перенос тарифов](docs/tariffs.md), [оформление](docs/branding.md).
+Инструкции: [развёртывание и HTTPS](docs/deploy.md), [интеграция Platega](docs/platega.md), [перенос тарифов](docs/tariffs.md), [оформление](docs/branding.md).
