@@ -1,0 +1,84 @@
+{% extends "tma/base.html" %}
+
+{% block content %}
+<div class="tma-header animate-in">
+    <div class="avatar-placeholder">{{ user.full_name[0]|upper if user.full_name else '?' }}</div>
+    <div class="flex-grow-1">
+        <h5 class="text-truncate">{{ user.full_name }}</h5>
+        <p class="text-gray small">HamzAVPN — личный кабинет</p>
+    </div>
+    {% if user.vpn_username and vpn_data %}
+        {% if vpn_data.status == 'active' %}
+            <span class="status-badge status-badge-active">
+                <span class="pulse-dot pulse-dot-green"></span> Активен
+            </span>
+        {% else %}
+            <span class="status-badge status-badge-expired">
+                <span class="pulse-dot pulse-dot-red"></span> Истёк
+            </span>
+        {% endif %}
+    {% endif %}
+</div>
+
+{% if user.vpn_username and vpn_data %}
+
+    {% if vpn_data.status == 'active' %}
+    <div class="section-card animate-in" style="border-left: 3px solid var(--success);">
+        <h5 class="fw-bold mb-1"><i class="fas fa-shield-halved text-success-custom me-2"></i>VPN активен</h5>
+        <p class="text-gray small mb-0">
+            Истекает: <span class="text-primary fw-bold">{{ expire_display or '—' }}</span>
+        </p>
+    </div>
+    {% else %}
+    <div class="section-card animate-in" style="border-left: 3px solid var(--danger);">
+        <h5 class="fw-bold mb-1"><i class="fas fa-exclamation-circle text-danger-custom me-2"></i>Подписка истекла</h5>
+        <p class="text-gray small mb-0">
+            Дата окончания: <span class="text-danger-custom fw-bold">{{ expire_display or '—' }}</span>
+        </p>
+        <div class="alert-custom alert-warning-custom mt-3 text-start mb-0">
+            <i class="fas fa-info-circle me-1"></i> Доступ приостановлен. Пополните подписку.
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="tma-quick-actions animate-in animate-in-delay-1">
+        <a href="/tma/import" class="btn btn-brand-outline"><i class="fas fa-bolt me-1"></i> Подключить</a>
+        <a href="/tma/tariffs" class="btn btn-brand">
+            <i class="fas fa-sync-alt me-1"></i> {% if vpn_data.status == 'active' %}Продлить{% else %}Возобновить{% endif %}
+        </a>
+    </div>
+
+{% elif user.vpn_username %}
+
+    <div class="alert-custom alert-error animate-in">{{ vpn_error }}</div>
+    <div class="tma-quick-actions single animate-in">
+        <a href="/tma/tariffs" class="btn btn-brand"><i class="fas fa-tags me-1"></i> Тарифы</a>
+    </div>
+
+{% else %}
+
+    <div class="section-card text-center animate-in" style="border: 1px dashed var(--primary); background: rgba(139, 184, 239, 0.03);">
+        <div class="feature-icon mx-auto mb-3"><i class="fas fa-gift"></i></div>
+        <h5 class="fw-bold">Попробуйте бесплатно</h5>
+        <p class="text-gray mb-3">7 дней пробной подписки на защищённое соединение</p>
+        <button type="button" class="btn btn-brand w-100 py-2 fw-bold" onclick="tmaActivateTrial(this)">
+            <span class="btn-text">Активировать тест <i class="fas fa-arrow-right ms-1"></i></span>
+        </button>
+    </div>
+    <div class="tma-quick-actions single animate-in animate-in-delay-1">
+        <a href="/tma/tariffs" class="btn btn-brand-outline"><i class="fas fa-tags me-1"></i> Посмотреть тарифы</a>
+    </div>
+
+{% endif %}
+
+<!-- Referral teaser -->
+<div class="section-card animate-in animate-in-delay-2">
+    <div class="d-flex align-items-center justify-content-between gap-3">
+        <div>
+            <h6 class="fw-bold mb-1"><i class="fas fa-users text-brand me-2"></i>Реферальная программа</h6>
+            <p class="text-gray small mb-0">Приглашайте друзей — получайте бонусные дни</p>
+        </div>
+        <a href="/tma/referral" class="btn btn-brand-outline btn-sm">Открыть</a>
+    </div>
+</div>
+{% endblock %}

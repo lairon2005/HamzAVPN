@@ -1,0 +1,29 @@
+aiogram~=3.29.1
+aiohttp~=3.9.5
+aiohttp-socks~=0.8.4
+certifi==2024.2.2
+ujson==5.9.0
+environs==11.0.0
+requests[socks]~=2.31.0
+cachetools~=5.3.3
+httpx[socks]==0.28.1
+betterlogging~=1.0.0
+psycopg2-binary~=2.9.9    
+python-dotenv~=1.0.1      
+peewee==3.16.2       
+pytz
+qrcode[Pil]
+apscheduler
+asyncpg  # Драйвер для PostgreSQL
+SQLAlchemy[asyncio]>=2.0,<2.2
+
+
+fastapi
+uvicorn
+python-multipart
+jinja2
+argon2-cffi
+email-validator
+passlib[bcrypt] # Для хеширования паролей
+python-jose[cryptography] # Для токенов авторизации
+fastapi-mail==1.4.1

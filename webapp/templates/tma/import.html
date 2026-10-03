@@ -1,0 +1,99 @@
+{% extends "tma/base.html" %}
+
+{% block content %}
+<h5 class="fw-bold mb-3 animate-in"><i class="fas fa-bolt text-brand me-2"></i>Подключение VPN</h5>
+
+{% if key_notice %}
+<div class="alert-custom {% if key_notice_ok %}alert-success{% else %}alert-error{% endif %} animate-in">
+    {{ key_notice }}
+</div>
+{% endif %}
+
+{% if sub_link %}
+
+    <div class="section-card animate-in">
+        <label class="form-label small fw-bold mb-2">Ключ подключения (VLESS)</label>
+        <div class="copy-field">
+            <input type="text" value="{{ sub_link }}" id="subLink" readonly>
+            <button class="copy-btn" type="button" onclick="tmaCopy('subLink', 'Ключ скопирован!')" title="Копировать">
+                <i class="fas fa-copy"></i>
+            </button>
+        </div>
+
+        <p class="text-gray small mt-3 mb-2">
+            Ссылка попала к посторонним? Перевыпустите ключ — старая перестанет
+            работать, а все устройства отвяжутся.
+        </p>
+        <form action="/tma/key/revoke" method="post"
+              onsubmit="return confirm('Перевыпустить ключ? Старая ссылка перестанет работать, и подписку придётся заново добавить на всех ваших устройствах.');">
+            <button type="submit" class="btn btn-sm btn-brand-outline w-100">
+                <i class="fas fa-rotate me-1"></i> Перевыпустить ключ
+            </button>
+        </form>
+    </div>
+
+    <div class="section-card animate-in animate-in-delay-1">
+        <h6 class="fw-bold mb-3">Как подключиться</h6>
+        <div class="stepper">
+            <div class="stepper-item">
+                <div class="stepper-number">1</div>
+                <div class="stepper-content">
+                    <h6>Скачайте приложение Happ</h6>
+                    <p id="appDescription">Определяем устройство...</p>
+                    <a href="#" id="downloadBtn" target="_blank" rel="noopener" class="btn btn-brand-outline btn-sm mt-1">
+                        <i class="fas fa-download me-1" id="osIcon"></i>
+                        <span id="btnText">Скачать</span>
+                    </a>
+                    <div class="mt-2 d-flex flex-wrap gap-2">
+                        <a href="https://play.google.com/store/apps/details?id=com.happproxy" target="_blank" rel="noopener" class="btn btn-sm btn-brand-outline py-1 px-3" style="font-size: 0.78rem;">Android</a>
+                        <a href="https://apps.apple.com/ru/app/happ-proxy-utility/id6783623643" target="_blank" rel="noopener" class="btn btn-sm btn-brand-outline py-1 px-3" style="font-size: 0.78rem;">iOS / macOS</a>
+                        <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe" target="_blank" rel="noopener" class="btn btn-sm btn-brand-outline py-1 px-3" style="font-size: 0.78rem;">Windows</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stepper-item">
+                <div class="stepper-number">2</div>
+                <div class="stepper-content">
+                    <h6>Скопируйте ключ</h6>
+                    <p>Нажмите на кнопку копирования в поле выше</p>
+                </div>
+            </div>
+
+            <div class="stepper-item">
+                <div class="stepper-number">3</div>
+                <div class="stepper-content">
+                    <h6>Подключитесь одной кнопкой</h6>
+                    <p class="mb-2">На странице подписки выберите приложение — Happ сам добавит ключ</p>
+                    {# Открываем через Telegram.WebApp.openLink (tma.js::initOpenSubLink):
+                       sub-страница Remnawave должна открыться браузером, иначе её
+                       happ:// deeplink не сработает внутри webview Mini App. #}
+                    <button type="button" class="btn btn-brand btn-sm"
+                            id="tmaOpenSubBtn" data-sub-link="{{ sub_link }}">
+                        <i class="fas fa-bolt me-1"></i> Открыть страницу подписки
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% elif user.vpn_username %}
+
+    <div class="alert-custom alert-error animate-in">{{ vpn_error }}</div>
+
+{% else %}
+
+    <div class="section-card text-center animate-in" style="border: 1px dashed var(--primary); background: rgba(139, 184, 239, 0.03);">
+        <div class="feature-icon mx-auto mb-3"><i class="fas fa-key"></i></div>
+        <h5 class="fw-bold">У вас ещё нет ключа</h5>
+        <p class="text-gray mb-3">Активируйте бесплатный пробный период или купите тариф</p>
+        <div class="d-flex flex-column gap-2">
+            <button type="button" class="btn btn-brand w-100" onclick="tmaActivateTrial(this)">
+                <span class="btn-text">Попробовать бесплатно</span>
+            </button>
+            <a href="/tma/tariffs" class="btn btn-brand-outline w-100">Смотреть тарифы</a>
+        </div>
+    </div>
+
+{% endif %}
+{% endblock %}

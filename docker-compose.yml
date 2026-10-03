@@ -1,0 +1,79 @@
+name: hamzavpn
+
+services:
+  nginx:
+    container_name: hamzavpn_nginx
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - hamzavpn_network
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      LOCATION: ${SERVER_URL:-/telegram/webhook}
+      REMNAWAVE_SUB_HOST: ${REMNAWAVE_SUB_HOST:-}
+    volumes:
+      - ./etc/nginx/templates:/etc/nginx/templates:ro
+      - ./etc/nginx/static:/usr/share/nginx/html:ro
+      - ${CERT_DIR:?Set CERT_DIR in .env}:/etc/nginx/certs:ro
+      - ./certbot/data:/var/www/certbot:ro
+    depends_on:
+      - vpn_site
+      - vpn_bot
+
+  postgres:
+    container_name: hamzavpn_postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME in .env}
+      POSTGRES_USER: ${DB_USER:?Set DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - hamzavpn_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vpn_site:
+    image: hamzavpn
+    container_name: hamzavpn_site
+    command: uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    env_file: .env
+    expose: ["8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hamzavpn_network
+
+  vpn_bot:
+    image: hamzavpn
+    container_name: hamzavpn_bot
+    build:
+      context: .
+    working_dir: /usr/src/app
+    command: python3 -m bot
+    stop_signal: SIGINT
+    restart: unless-stopped
+    env_file: .env
+    expose: ["8081"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hamzavpn_network
+
+networks:
+  hamzavpn_network:
+    driver: bridge
+
+volumes:
+  postgres-data:

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+    <link rel="icon" type="image/png" href="/static/img/hamzavpn-logo.png">
+    <meta name="theme-color" content="#081222">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>HamzAVPN</title>
+<!-- Telegram WebApp JS SDK -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link href="/static/css/styles.css" rel="stylesheet">
+<link href="/static/css/tma.css" rel="stylesheet">
+</head>
+<body class="tma-body" style="padding-bottom:0;">
+    <!-- Общий сплэш для ЛЮБОГО GET /tma/* без валидной cookie/сессии: пользователь мог
+         открыть Mini App по прямому deeplink на конкретный экран, ни разу не пройдя
+         /tma/auth (см. docs/tma-roadmap.md фаза 1.2). После успешной авторизации
+         просто перезагружаем ту же страницу — роут отдаст уже настоящий экран. -->
+    <div class="tma-splash">
+        <div>
+            <img src="/static/img/hamzavpn-logo.png" alt="Логотип HamzAVPN" width="80" height="80" style="object-fit:contain;margin-bottom:20px;">
+            <div class="spinner" id="tmaSplashSpinner"></div>
+            <h1 id="tmaSplashTitle" style="font-size:20px;margin:0 0 4px;">HamzAVPN</h1>
+            <div class="status text-gray" id="tmaSplashStatus" style="font-size:15px;margin-top:12px;">Авторизация…</div>
+        </div>
+    </div>
+
+    <script src="/static/js/tma.js"></script>
+</body>
+</html>

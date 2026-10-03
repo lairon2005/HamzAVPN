@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="container py-5" style="max-width: 960px;">
+    <h1 class="mb-3">Документы и тарифы HamzAVPN</h1>
+    <p class="text-secondary">Условия подписки, цены и личная поддержка доступны до регистрации и оплаты. Редакция документов: {{ document_date }}.</p>
+    {% if review_mode %}<p class="small text-brand">{{ review_phrase }}</p>{% endif %}
+    <div class="row g-3 mt-3">
+        {% for url, heading, description in [('/privacy', 'Политика конфиденциальности', 'Какие сведения обрабатывает сервис и как обратиться по вопросам данных.'), ('/terms', 'Пользовательское соглашение', 'Состав услуги, разовая оплата, правила использования и обращения по возвратам.'), ('/tariffs', 'Актуальные тарифы', 'Цена в RUB, срок подписки, устройства и квота трафика.'), ('/support', 'Личная поддержка', 'Обращения по подключению, подписке, оплате и учетной записи.')] %}
+        <div class="col-md-6">
+            <a class="card h-100 p-4 text-decoration-none" href="{{ url }}">
+                <h2 class="h5 text-brand">{{ heading }}</h2>
+                <p class="text-secondary mb-0">{{ description }}</p>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

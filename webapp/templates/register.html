@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container d-flex align-items-center justify-content-center" style="min-height: 85vh;">
+    <div class="col-12 col-md-6 col-lg-4">
+
+        <div class="card glass-card p-4 animate-in">
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <div class="auth-brand"><img src="/static/img/hamzavpn-logo.png" alt=""><span class="text-brand fw-bold fs-4">HamzAVPN</span></div>
+                    <h3 class="fw-bold mt-2 mb-0">Регистрация</h3>
+                </div>
+
+                {% if error %}
+                    <div class="alert-custom alert-error">{{ error }}</div>
+                {% endif %}
+
+                <form action="/register" method="post" id="registerForm">
+                    {% if ref %}<input type="hidden" name="ref" value="{{ ref }}">{% endif %}
+
+                    <!-- Имя -->
+                    <div class="mb-3">
+                        <label class="form-label" for="register-full_name">Ваше имя</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-user input-icon"></i>
+                            <input type="text" autocomplete="name" name="full_name" id="register-full_name" class="form-control" placeholder="Иван Иванов" required>
+                        </div>
+                    </div>
+
+                    <!-- Email -->
+                    <div class="mb-3">
+                        <label class="form-label" for="register-email">Email</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-envelope input-icon"></i>
+                            <input type="email" autocomplete="email" name="email" id="register-email" class="form-control" placeholder="name@example.com" required>
+                        </div>
+                    </div>
+
+                    <!-- Пароль -->
+                    <div class="mb-4">
+                        <label class="form-label" for="registerPassword">Пароль</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-lock input-icon"></i>
+                            <input type="password" autocomplete="new-password" name="password" id="registerPassword" class="form-control" placeholder="Минимум 6 символов" required minlength="6">
+                        </div>
+                        <div class="password-strength mt-1">
+                            <div class="bar" id="passwordStrengthBar"></div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-brand w-100 py-2 fw-bold">
+                        <span class="btn-text">Создать аккаунт</span>
+                    </button>
+                </form>
+
+                <div class="mt-4 text-center">
+                    <span class="text-gray">Уже есть аккаунт?</span>
+                    <a href="/login" class="text-brand fw-bold text-decoration-none ms-1">Войти</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

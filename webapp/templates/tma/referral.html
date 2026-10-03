@@ -1,0 +1,43 @@
+{% extends "tma/base.html" %}
+
+{% block content %}
+<h5 class="fw-bold mb-3 animate-in"><i class="fas fa-users text-brand me-2"></i>Реферальная программа</h5>
+
+<div class="section-card animate-in">
+    <p class="text-gray small mb-3">
+        Приглашайте друзей — получайте <b class="text-primary">30 бонусных дней</b> за каждую их первую оплату.
+    </p>
+
+    {% if ref_link %}
+        <div class="copy-field mb-3">
+            <input type="text" id="refLink" value="{{ ref_link }}" readonly>
+            <button class="copy-btn" type="button" onclick="tmaCopy('refLink', 'Ссылка скопирована!')" title="Копировать">
+                <i class="fas fa-copy"></i>
+            </button>
+        </div>
+
+        <button type="button" class="btn btn-brand w-100" id="tmaShareRefBtn"
+                data-ref-link="{{ ref_link }}"
+                data-share-text="Попробуй HamzAVPN для личного защищённого соединения. По моей ссылке доступен пробный период.">
+            <i class="fab fa-telegram me-1"></i> Поделиться в Telegram
+        </button>
+    {% else %}
+        <div class="alert-custom alert-info">
+            Реферальная ссылка пока недоступна. Попробуйте позже или напишите в личную поддержку.
+        </div>
+    {% endif %}
+</div>
+
+<div class="section-card animate-in animate-in-delay-1">
+    <div class="d-flex gap-4">
+        <div>
+            <div class="stat-label">Приглашено</div>
+            <div class="stat-value">{{ referral_count }}</div>
+        </div>
+        <div>
+            <div class="stat-label">Бонусные дни</div>
+            <div class="stat-value text-brand">{{ referral_bonus }}</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

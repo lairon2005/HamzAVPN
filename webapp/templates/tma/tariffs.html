@@ -1,0 +1,77 @@
+{% extends "tma/base.html" %}
+
+{% block content %}
+<h5 class="fw-bold mb-3 animate-in"><i class="fas fa-tags text-brand me-2"></i>Тарифы</h5>
+
+<div class="section-card animate-in">
+    <label class="form-label small fw-bold">Есть промокод?</label>
+    <div class="copy-field">
+        <input type="text" id="promoInput" placeholder="Введите промокод">
+        <button class="copy-btn" type="button" id="promoApplyBtn">Применить</button>
+    </div>
+    <div id="promoResult" class="small mt-1"></div>
+</div>
+
+{% if tariffs %}
+    <div class="section-card animate-in mt-3" id="slotSelector"
+         data-slot-price="{{ device_settings.price }}"
+         data-slot-max="{{ device_settings.max_extra }}"
+         data-base-limit="{{ device_settings.base_limit }}"
+         data-current-slots="{{ current_extra_devices }}">
+        <div class="d-flex align-items-center justify-content-between gap-2">
+            <div>
+                <span class="fw-bold"><i class="fas fa-mobile-alt text-brand me-2"></i>Устройства</span>
+                <div class="text-gray small">
+                    {{ device_settings.base_limit }} в тарифе, далее {{ device_settings.price }} ₽/мес за каждое
+                </div>
+                <div class="text-gray small" id="slotCostLabel"></div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-brand-outline px-3" data-slot-action="dec">−</button>
+                <span class="fw-bold" id="slotTotalLabel">{{ device_settings.base_limit + current_extra_devices }}</span>
+                <button type="button" class="btn btn-sm btn-brand-outline px-3" data-slot-action="inc">+</button>
+            </div>
+        </div>
+        <p class="text-gray small mb-0 mt-2">
+            Трафик общий на аккаунт — от количества устройств он не растёт.
+        </p>
+    </div>
+
+    <div class="tma-tariffs animate-in animate-in-delay-1">
+        {% for tariff in tariffs %}
+            {% set is_popular = (tariffs|length >= 3 and loop.index == 2) %}
+            <div class="card tariff-card {% if is_popular %}popular{% endif %}"
+                 data-tariff-name="{{ tariff.name }}" data-tariff-price="{{ tariff.price }}"
+                                 data-tariff-effective-price="{{ tariff_prices.get(tariff.id, tariff.price) if tariff_prices else tariff.price }}"
+                 data-tariff-days="{{ tariff.duration_days }}">
+                {% if is_popular %}<span class="tariff-badge">Популярный</span>{% endif %}
+                <div class="tariff-row">
+                    <div>
+                        <h5 class="fw-bold mb-1">{{ tariff.name }}</h5>
+                        <div class="text-gray small">
+                            {{ tariff.duration_days }} дней · защищённое соединение ·
+                            {{ device_settings.base_limit }} устройств
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="tariff-price">{{ "%.2f"|format(tariff_prices.get(tariff.id, tariff.price) if tariff_prices else tariff.price) }} <small class="fs-6">₽</small></div>
+                        <div class="tariff-radio"></div>
+                    </div>
+                </div>
+                {% if tariff.price_stars and not current_extra_devices %}
+                <button type="button" class="btn-brand-outline w-100 mt-2 tma-stars-btn"
+                        data-tariff-id="{{ tariff.id }}" data-price-stars="{{ tariff.price_stars }}">
+                    ⭐ {{ tariff.price_stars }}
+                </button>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+    <p class="text-gray small text-center mt-3 animate-in">
+        Выберите тариф — кнопка оплаты появится внизу экрана
+    </p>
+    <div class="tma-mainbutton-spacer"></div>
+{% else %}
+    <p class="text-center text-gray py-5">Тарифы пока не добавлены.</p>
+{% endif %}
+{% endblock %}

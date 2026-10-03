@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container d-flex align-items-center justify-content-center" style="min-height: 85vh;">
+    <div class="col-12 col-md-5 col-lg-4">
+
+        <div class="card glass-card p-4 animate-in">
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <div class="auth-brand"><img src="/static/img/hamzavpn-logo.png" alt=""><span class="text-brand fw-bold fs-4">HamzAVPN</span></div>
+                    <h3 class="fw-bold mt-2 mb-0">Вход</h3>
+                </div>
+
+                {% if message %}
+                    <div class="alert-custom alert-success">{{ message }}</div>
+                {% endif %}
+
+                {% if error %}
+                    <div class="alert-custom alert-error">{{ error }}</div>
+                {% endif %}
+
+                <form action="/login" method="post" id="loginForm">
+                    <div class="mb-3">
+                        <label class="form-label" for="login-email">Email</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-envelope input-icon"></i>
+                            <input type="email" autocomplete="email" name="email" id="login-email" class="form-control" placeholder="name@example.com" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-1">
+                        <label class="form-label" for="login-password">Пароль</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fas fa-lock input-icon"></i>
+                            <input type="password" autocomplete="current-password" name="password" id="login-password" class="form-control" placeholder="Введите пароль" required>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end mb-3">
+                        <a href="/forgot-password" class="small text-gray text-decoration-none hover-effect">Забыли пароль?</a>
+                    </div>
+
+                    <button type="submit" class="btn btn-brand w-100 py-2 fw-bold">
+                        <span class="btn-text">Войти</span>
+                    </button>
+                </form>
+
+                <div class="mt-4 text-center">
+                    <span class="text-gray">Нет аккаунта?</span>
+                    <a href="/register" class="text-brand fw-bold text-decoration-none ms-1">Зарегистрироваться</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

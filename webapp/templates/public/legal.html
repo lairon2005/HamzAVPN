@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<article class="container py-5" style="max-width: 960px;">
+    <a class="text-brand text-decoration-none" href="/documents">← Документы и тарифы</a>
+    <h1 class="mt-4">{{ document.title }}</h1>
+    <p class="text-secondary">HamzAVPN · Редакция {{ document_date }}</p>
+    {% if review_mode %}<p class="small text-brand">{{ review_phrase }}</p>{% endif %}
+    {% for heading, text in document.sections %}
+    <section class="mt-4">
+        <h2 class="h4">{{ heading }}</h2>
+        <p style="line-height: 1.8;">{{ text }}</p>
+    </section>
+    {% endfor %}
+    <a class="btn btn-brand mt-3" href="/support">Обратиться в поддержку</a>
+</article>
+{% endblock %}

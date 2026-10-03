@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-9">
+
+            <!-- Profile Header -->
+            <div class="section-card animate-in">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="avatar-placeholder">
+                        {{ user.full_name[0]|upper if user.full_name else '?' }}
+                    </div>
+                    <div class="flex-grow-1">
+                        <h4 class="fw-bold mb-0 text-truncate">{{ user.full_name }}</h4>
+                        <p class="text-gray small mb-0 text-truncate">{{ user.email or 'Email не привязан' }}</p>
+                    </div>
+                    {% if user.vpn_username and vpn_data %}
+                        {% if vpn_data.status == 'active' %}
+                            <span class="status-badge status-badge-active">
+                                <span class="pulse-dot pulse-dot-green"></span> Активен
+                            </span>
+                        {% else %}
+                            <span class="status-badge status-badge-expired">
+                                <span class="pulse-dot pulse-dot-red"></span> Истёк
+                            </span>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Итог перевыпуска ключа (?key=... после POST /profile/key/revoke) -->
+            {% if key_notice %}
+            <div class="alert-custom {% if key_notice_ok %}alert-success{% else %}alert-error{% endif %} animate-in">
+                <i class="fas {% if key_notice_ok %}fa-circle-check{% else %}fa-circle-exclamation{% endif %} me-1"></i>
+                {{ key_notice }}
+            </div>
+            {% endif %}
+
+            <!-- VPN Status -->
+            {% if user.vpn_username and vpn_data %}
+
+                {% if vpn_data.status == 'active' %}
+                <!-- Active Subscription -->
+                <div class="section-card animate-in animate-in-delay-1" style="border-left: 3px solid var(--success);">
+                    <div class="row align-items-center g-3">
+                        <div class="col-12 col-md-8">
+                            <h5 class="fw-bold mb-1">
+                                <i class="fas fa-shield-halved text-success-custom me-2"></i>VPN Активен
+                            </h5>
+                            <p class="text-gray small mb-0">
+                                Истекает: <span class="text-primary fw-bold">{{ vpn_data.expire | float | timestamp_to_date }}</span>
+                            </p>
+                        </div>
+                        <div class="col-12 col-md-4 text-md-end">
+                            <button type="button" class="btn btn-brand btn-sm px-4" data-bs-toggle="modal" data-bs-target="#extendModal">
+                                <span class="btn-text"><i class="fas fa-sync-alt me-1"></i> Продлить</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {% else %}
+                <!-- Expired Subscription -->
+                <div class="section-card animate-in animate-in-delay-1" style="border-left: 3px solid var(--danger);">
+                    <div class="row align-items-center g-3">
+                        <div class="col-12 col-md-8">
+                            <h5 class="fw-bold mb-1">
+                                <i class="fas fa-exclamation-circle text-danger-custom me-2"></i>Подписка истекла
+                            </h5>
+                            <p class="text-gray small mb-0">
+                                Дата окончания: <span class="text-danger-custom fw-bold">{{ vpn_data.expire | float | timestamp_to_date }}</span>
+                            </p>
+                        </div>
+                        <div class="col-12 col-md-4 text-md-end">
+                            <button type="button" class="btn btn-brand btn-sm px-4" data-bs-toggle="modal" data-bs-target="#extendModal">
+                                <span class="btn-text"><i class="fas fa-sync-alt me-1"></i> Возобновить</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="alert-custom alert-warning-custom mt-3 text-start">
+                        <i class="fas fa-info-circle me-1"></i> Доступ приостановлен. Пополните подписку.
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Subscription Key -->
+                <div class="section-card animate-in animate-in-delay-2">
+                    <label class="form-label small fw-bold mb-2">Ключ подключения (VLESS)</label>
+                    <div class="copy-field">
+                        <input type="text" value="{{ sub_link }}" id="subLink" readonly>
+                        <button class="copy-btn" type="button" onclick="copyLink()" title="Копировать">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3">
+                        <span class="text-gray small">
+                            Ссылка попала к посторонним? Перевыпустите ключ — старая перестанет работать.
+                        </span>
+                        <form action="/profile/key/revoke" method="post"
+                              onsubmit="return confirm('Перевыпустить ключ? Старая ссылка перестанет работать, и подписку придётся заново добавить на всех ваших устройствах.');">
+                            <button type="submit" class="btn btn-sm btn-brand-outline px-3">
+                                <i class="fas fa-rotate me-1"></i> Перевыпустить ключ
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Connection Steps -->
+                <div class="section-card animate-in animate-in-delay-3">
+                    <h5 class="fw-bold mb-3"><i class="fas fa-rocket text-brand me-2"></i>Подключение</h5>
+
+                    <div class="stepper">
+                        <div class="stepper-item">
+                            <div class="stepper-number">1</div>
+                            <div class="stepper-content">
+                                <h6>Скачайте приложение</h6>
+                                <p id="appDescription">Определяем устройство...</p>
+                                <a href="#" id="downloadBtn" target="_blank" class="btn btn-brand-outline btn-sm mt-1">
+                                    <i class="fas fa-download me-1" id="osIcon"></i>
+                                    <span id="btnText">Скачать</span>
+                                </a>
+
+                                <div class="mt-2">
+                                    <a href="#" class="small text-gray text-decoration-none" data-bs-toggle="collapse" data-bs-target="#allApps">
+                                        Другие ОС <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem;"></i>
+                                    </a>
+                                    <div class="collapse mt-2" id="allApps">
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <a href="https://play.google.com/store/apps/details?id=com.happproxy" target="_blank" class="btn btn-sm btn-brand-outline py-1 px-3" style="font-size: 0.8rem;">Android</a>
+                                            <a href="https://apps.apple.com/ru/app/happ-proxy-utility/id6783623643" target="_blank" class="btn btn-sm btn-brand-outline py-1 px-3" style="font-size: 0.8rem;">iOS</a>
+                                            <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe" target="_blank" class="btn btn-sm btn-brand-outline py-1 px-3" style="font-size: 0.8rem;">Windows</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="stepper-item">
+                            <div class="stepper-number">2</div>
+                            <div class="stepper-content">
+                                <h6>Скопируйте ключ</h6>
+                                <p>Нажмите кнопку копирования в поле выше</p>
+                            </div>
+                        </div>
+
+                        <div class="stepper-item">
+                            <div class="stepper-number">3</div>
+                            <div class="stepper-content">
+                                <h6>Подключитесь</h6>
+                                <p>Откройте страницу подписки и выберите приложение — ключ импортируется сам</p>
+                                {% if sub_link %}
+                                    <a href="{{ sub_link }}" target="_blank" rel="noopener" class="btn btn-brand btn-sm mt-1">
+                                        <span class="btn-text"><i class="fas fa-bolt me-1"></i> Открыть страницу подписки</span>
+                                    </a>
+                                {% else %}
+                                    <button class="btn btn-sm" disabled style="opacity:0.5;">Ссылка недоступна</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Referral Program -->
+                {% if user.vpn_username %}
+                <div class="section-card animate-in animate-in-delay-4">
+                    <h5 class="fw-bold mb-2"><i class="fas fa-users text-brand me-2"></i>Реферальная программа</h5>
+                    <p class="text-gray small mb-3">
+                        Приглашайте друзей — получайте <b class="text-primary">30 бонусных дней</b> за каждую их первую оплату.
+                    </p>
+
+                    <div class="copy-field mb-3">
+                        <input type="text" id="refLink"
+                               value="" readonly data-ref="{{ user.user_id }}">
+                        <button class="copy-btn" type="button" onclick="copyRefLink()" title="Копировать">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <div class="d-flex gap-4">
+                        <div>
+                            <div class="stat-label">Приглашено</div>
+                            <div class="fw-bold fs-5">{{ referral_count }}</div>
+                        </div>
+                        <div>
+                            <div class="stat-label">Бонусные дни</div>
+                            <div class="fw-bold fs-5 text-brand">{{ referral_bonus }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Payment History -->
+                {% if payments %}
+                <div class="section-card animate-in">
+                    <h5 class="fw-bold mb-3"><i class="fas fa-receipt text-brand me-2"></i>Последние платежи</h5>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr><th>Дата</th><th>Сумма</th><th>Статус</th></tr>
+                            </thead>
+                            <tbody>
+                            {% for p in payments[:5] %}
+                                <tr>
+                                    <td>{{ p.created_at.strftime('%d.%m.%Y') if p.created_at else '—' }}</td>
+                                    <td>
+                                        {{ "%.2f"|format(p.final_amount) }} ₽
+                                        {% if p.discount_percent %}<span class="text-success-custom small">(−{{ p.discount_percent }}%)</span>{% endif %}
+                                        {% if p.kind == 'devices' %}<div class="text-gray small">доп. устройства ({{ p.extra_devices }} шт.)</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if p.status == 'succeeded' %}<span class="status-badge status-badge-active">Оплачен</span>
+                                        {% elif p.status == 'pending' %}<span class="status-badge status-badge-pending">Ожидает</span>
+                                        {% elif p.status == 'refunded' %}<span class="status-badge" style="background:var(--info-bg);color:var(--info);">Возврат</span>
+                                        {% elif p.status == 'cancelled' %}<span class="status-badge" style="background:rgba(255,255,255,0.05);color:var(--text-muted);">Отменён</span>
+                                        {% else %}<span class="status-badge status-badge-expired">Ошибка</span>{% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+            <!-- Devices -->
+            {% if devices %}
+            <div class="section-card animate-in">
+                <h5 class="fw-bold mb-3">
+                    <i class="fas fa-mobile-alt text-brand me-2"></i>Мои устройства
+                    <span class="text-gray small fw-normal ms-2">
+                        {% if devices.limit %}
+                            {{ devices.used }} из {{ devices.limit }}
+                            {% if slot_quote.current_extra %}
+                                ({{ slot_quote.current_extra }} доп. оплачено)
+                            {% endif %}
+                        {% else %}
+                            подключено: {{ devices.used }}
+                        {% endif %}
+                    </span>
+                </h5>
+
+                {% if devices.error %}
+                    <p class="text-gray small mb-0"><i class="fas fa-info-circle me-1"></i>{{ devices.error }}</p>
+                {% elif not devices.devices %}
+                    <p class="text-gray small mb-0">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Пока ни одного устройства. Добавьте подписку в приложение — оно появится здесь.
+                    </p>
+                {% else %}
+                    {% if devices.is_full %}
+                    <div class="alert-custom alert-error mb-3">
+                        Лимит устройств исчерпан. Отвяжите одно из списка{% if slot_quote.ok %} или докупите слот{% endif %}.
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex flex-column gap-2">
+                        {% for device in devices.devices %}
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 p-2"
+                             style="border: 1px solid var(--border-card); border-radius: 8px;">
+                            <div>
+                                <span class="fw-bold">{{ device.title }}</span>
+                                <div class="text-gray small">
+                                    {{ device.app }} · {{ device.platform }} ·
+                                    последний вход {{ device.last_seen_display }}
+                                </div>
+                            </div>
+                            <form action="/profile/devices/delete" method="post"
+                                  onsubmit="return confirm('Отвязать {{ device.title }}? На этом устройстве подписку нужно будет добавить заново.');">
+                                <input type="hidden" name="key" value="{{ device.key }}">
+                                <button type="submit" class="btn btn-sm btn-brand-outline px-3"
+                                        style="border-color: var(--danger); color: var(--danger);">
+                                    <i class="fas fa-trash-alt me-1"></i> Отвязать
+                                </button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                {% if slot_quote.ok %}
+                <!-- Докупка слотов: цена считается по остатку срока подписки -->
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3 p-3"
+                     style="border: 1px dashed var(--border-card); border-radius: 10px;"
+                     data-slot-unit-price="{{ slot_quote.price_per_slot }}"
+                     data-slot-available="{{ slot_quote.available }}"
+                     id="buySlotsBox">
+                    <div>
+                        <span class="fw-bold">Нужно больше устройств?</span>
+                        <div class="text-gray small">
+                            {{ "%.2f"|format(slot_quote.price_per_slot) }} ₽ за устройство до конца подписки
+                            ({{ slot_quote.remaining_days }} дн.). Далее — {{ device_settings.price }} ₽ в месяц
+                            вместе с продлением.
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-brand-outline px-3"
+                                onclick="updateBuySlots(-1)">−</button>
+                        <span class="fw-bold" id="buySlotsCount">1</span>
+                        <button type="button" class="btn btn-sm btn-brand-outline px-3"
+                                onclick="updateBuySlots(1)">+</button>
+                        <button type="button" class="btn btn-sm btn-brand px-3" onclick="buyDeviceSlots(this)">
+                            <span class="btn-text">Докупить за <span id="buySlotsPrice">{{ "%.2f"|format(slot_quote.price) }}</span> ₽</span>
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="section-card animate-in">
+                <h5 class="fw-bold mb-2"><i class="fas fa-credit-card text-brand me-2"></i>Оплата через Platega</h5>
+                <p class="text-gray small mb-0">Выберите тариф и перейдите к оплате. Итоговая стоимость и доступные способы оплаты отображаются перед подтверждением. Каждый заказ оплачивается отдельно.</p>
+            </div>
+
+            {% elif error %}
+                <div class="alert-custom alert-error">{{ error }}</div>
+
+            {% else %}
+                <!-- Trial Block -->
+                <div class="section-card text-center animate-in animate-in-delay-1" style="border: 1px dashed var(--primary); background: rgba(139, 184, 239, 0.03);">
+                    <div class="feature-icon mx-auto mb-3">
+                        <i class="fas fa-gift"></i>
+                    </div>
+                    <h4 class="fw-bold">Попробуйте бесплатно</h4>
+                    <p class="text-gray mb-4">7 дней пробной подписки на защищённое соединение</p>
+
+                    <form action="/profile/activate_trial" method="post">
+                        <div class="col-12 col-md-6 mx-auto">
+                            <button type="submit" class="btn btn-brand w-100 py-2 fw-bold">
+                                <span class="btn-text">Активировать тест <i class="fas fa-arrow-right ms-1"></i></span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Extend Subscription -->
+<div class="modal fade" id="extendModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content" style="background: var(--bg-card); border: 1px solid var(--border-card);">
+
+            <div class="modal-header" style="border-color: var(--border-subtle);">
+                <h5 class="modal-title fw-bold">Продление подписки</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-4">
+                <!-- Promo code -->
+                <div class="mb-4">
+                    <label class="form-label small fw-bold">Есть промокод?</label>
+                    <div class="copy-field">
+                        <input type="text" id="promoInput" placeholder="Введите промокод">
+                        <button class="copy-btn" type="button" onclick="applyPromo()">Применить</button>
+                    </div>
+                    <div id="promoResult" class="small mt-1"></div>
+                </div>
+
+                {% if tariffs %}
+                <!-- Доп. устройства: одно количество на все тарифы, цена карточек
+                     пересчитывается на лету (updateSlotCount в scripts.js) -->
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 p-3"
+                     style="border: 1px solid var(--border-card); border-radius: 10px;"
+                     data-slot-price="{{ device_settings.price }}"
+                     data-slot-max="{{ device_settings.max_extra }}"
+                     data-base-limit="{{ device_settings.base_limit }}"
+                     data-current-slots="{{ slot_quote.current_extra }}"
+                     id="slotSelector">
+                    <div>
+                        <span class="fw-bold"><i class="fas fa-mobile-alt text-brand me-2"></i>Устройства</span>
+                        <div class="text-gray small">
+                            {{ device_settings.base_limit }} входит в тариф, каждое следующее —
+                            {{ device_settings.price }} ₽ в месяц. Трафик общий и не увеличивается.
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-brand-outline px-3"
+                                onclick="updateSlotCount(-1)">−</button>
+                        <span class="fw-bold" id="slotTotalLabel">{{ device_settings.base_limit + slot_quote.current_extra }}</span>
+                        <button type="button" class="btn btn-sm btn-brand-outline px-3"
+                                onclick="updateSlotCount(1)">+</button>
+                    </div>
+                </div>
+
+                <div class="row row-cols-1 row-cols-md-3 g-4 justify-content-center" id="tariffCards">
+                    {% for tariff in tariffs %}
+                        {% set is_popular = (tariffs|length >= 3 and loop.index == 2) %}
+                        <div class="col">
+                            <div class="card tariff-card h-100 p-3 {% if is_popular %}popular{% endif %}"
+                                 data-tariff-name="{{ tariff.name }}"
+                                 data-tariff-price="{{ tariff.price }}"
+                                 data-tariff-effective-price="{{ tariff_prices.get(tariff.id, tariff.price) if tariff_prices else tariff.price }}"
+                                 data-tariff-days="{{ tariff.duration_days }}">
+                                {% if is_popular %}<span class="tariff-badge">Популярный</span>{% endif %}
+
+                                <div class="card-body text-center d-flex flex-column">
+                                    <h4 class="fw-bold">{{ tariff.name }}</h4>
+                                    <div class="tariff-price my-3">
+                                        <span class="tariff-price-value">{{ "%.2f"|format(tariff_prices.get(tariff.id, tariff.price) if tariff_prices else tariff.price) }}</span>
+                                        <small class="fs-6">₽</small>
+                                    </div>
+                                    <ul class="tariff-features text-start mx-auto mb-3">
+                                        <li><i class="fas fa-check"></i> {{ tariff.duration_days }} дней</li>
+                                        <li><i class="fas fa-check"></i> Защищённое соединение</li>
+                                        <li class="tariff-devices-line">
+                                            <i class="fas fa-check"></i> {{ device_settings.base_limit }} устройств
+                                        </li>
+                                    </ul>
+                                    <button type="button" data-payment-tariff="{{ tariff.name }}" data-payment-price="{{ tariff.price }}"
+                                    onclick="initPayment(this.dataset.paymentTariff, this.dataset.paymentPrice, this)"
+                                            class="btn {% if is_popular %}btn-brand{% else %}btn-brand-outline{% endif %} mt-auto w-100">
+                                        <span class="btn-text">Купить</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                    <p class="text-center text-gray">Тарифы не найдены.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

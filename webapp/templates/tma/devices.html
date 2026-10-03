@@ -1,0 +1,109 @@
+{% extends "tma/base.html" %}
+
+{% block content %}
+<h5 class="fw-bold mb-3 animate-in">
+    <i class="fas fa-mobile-alt text-brand me-2"></i>Мои устройства
+</h5>
+
+{% if devices.error %}
+<div class="alert-custom alert-error animate-in">{{ devices.error }}</div>
+
+{% elif not devices.devices %}
+<p class="text-center text-gray py-5">
+    Пока ни одного устройства.<br>
+    Добавьте подписку в приложение — оно появится здесь.
+</p>
+
+{% else %}
+<div class="section-card animate-in mb-3">
+    <div class="d-flex align-items-center justify-content-between">
+        <span class="text-gray small">Занято слотов</span>
+        <span class="fw-bold">
+            {% if devices.limit %}{{ devices.used }} из {{ devices.limit }}{% else %}{{ devices.used }}{% endif %}
+        </span>
+    </div>
+    {% if slot_quote.current_extra %}
+    <div class="d-flex align-items-center justify-content-between mt-2">
+        <span class="text-gray small">Из них докуплено</span>
+        <span class="fw-bold">{{ slot_quote.current_extra }}</span>
+    </div>
+    {% endif %}
+    {% if devices.is_full %}
+    <div class="alert-custom alert-error mt-3 mb-0">
+        Лимит исчерпан. Отвяжите одно устройство{% if slot_quote.ok %} или докупите слот ниже{% endif %}.
+    </div>
+    {% endif %}
+</div>
+
+<div class="d-flex flex-column gap-2">
+    {% for device in devices.devices %}
+    <div class="section-card animate-in d-flex align-items-center justify-content-between gap-2">
+        <div>
+            <div class="fw-bold">{{ device.title }}</div>
+            <div class="text-gray small">{{ device.app }} · {{ device.platform }}</div>
+            <div class="text-gray small">последний вход {{ device.last_seen_display }}</div>
+        </div>
+        <form action="/tma/devices/delete" method="post"
+              onsubmit="return confirm('Отвязать {{ device.title }}? На этом устройстве подписку нужно будет добавить заново.');">
+            <input type="hidden" name="key" value="{{ device.key }}">
+            <button type="submit" class="btn btn-sm btn-brand-outline px-3"
+                    style="border-color: var(--danger); color: var(--danger);">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="text-gray small text-center mt-3">
+    Подписка сохраняется — устройство просто потребуется добавить заново.
+</p>
+{% endif %}
+
+{% if slot_quote.ok %}
+{# Докупка слотов: цену считает сервер по остатку срока подписки — слот всё
+   равно сгорит вместе с ней. #}
+<div class="section-card animate-in mt-3" id="buySlotsBox"
+     data-slot-unit-price="{{ slot_quote.price_per_slot }}"
+     data-slot-available="{{ slot_quote.available }}">
+    <div class="d-flex align-items-center justify-content-between gap-2">
+        <div>
+            <span class="fw-bold">Нужно больше устройств?</span>
+            <div class="text-gray small">
+                {{ "%.2f"|format(slot_quote.price_per_slot) }} ₽ за устройство до конца подписки
+                ({{ slot_quote.remaining_days }} дн.)
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-brand-outline px-3" data-slot-action="dec">−</button>
+            <span class="fw-bold" id="buySlotsCount">1</span>
+            <button type="button" class="btn btn-sm btn-brand-outline px-3" data-slot-action="inc">+</button>
+        </div>
+    </div>
+    <button type="button" class="btn btn-brand w-100 mt-3" id="buySlotsBtn">
+        <span class="btn-text">Докупить за <span id="buySlotsPrice">{{ "%.2f"|format(slot_quote.price) }}</span> ₽</span>
+    </button>
+    <p class="text-gray small mb-0 mt-2">
+        При продлении подписки доп. устройства автоматически войдут в счёт
+        ({{ device_settings.price }} ₽ в месяц за каждое).
+    </p>
+</div>
+{% endif %}
+
+{# Отвязка освобождает слот, но не отбирает доступ у того, кто скопировал саму
+   ссылку — он зарегистрируется заново. Для этого случая рядом перевыпуск. #}
+{% if user.vpn_username %}
+<div class="section-card animate-in mt-3">
+    <p class="text-gray small mb-2">
+        Не узнаёте устройство в списке? Значит, ссылка на подписку у посторонних —
+        отвязка тут не поможет, нужен новый ключ.
+    </p>
+    <form action="/tma/key/revoke" method="post"
+          onsubmit="return confirm('Перевыпустить ключ? Старая ссылка перестанет работать, и подписку придётся заново добавить на всех ваших устройствах.');">
+        <button type="submit" class="btn btn-sm btn-brand-outline w-100">
+            <i class="fas fa-rotate me-1"></i> Перевыпустить ключ
+        </button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

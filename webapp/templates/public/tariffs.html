@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="container py-5" style="max-width: 1080px;">
+    <a class="text-brand text-decoration-none" href="/documents">← Документы и тарифы</a>
+    <h1 class="mt-4">Актуальные тарифы HamzAVPN</h1>
+    <p class="lead">Подписка на VPN-сервис для защищенного сетевого соединения. В стоимость входят доступ на указанный срок, ссылка подключения и личная поддержка.</p>
+    <p class="text-secondary">Оплата в российских рублях (RUB) разовым платежом через Platega. Продление оплачивается самостоятельно.</p>
+    {% if review_mode %}<p class="small text-brand">{{ review_phrase }}</p>{% endif %}
+    {% if unavailable %}
+    <div class="alert alert-secondary mt-4">Тарифы временно недоступны. Проверьте цены позже или обратитесь в поддержку; оформление покупки сейчас недоступно.</div>
+    {% elif not tariffs %}
+    <div class="alert alert-secondary mt-4">Продажи подписок пока не открыты: активные тарифы не настроены. После их настройки здесь появятся действующие цены.</div>
+    {% else %}
+    <div class="row g-4 mt-2">
+        {% for tariff in tariffs %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card p-4 h-100">
+                <h2 class="h4">{{ tariff.name }}</h2>
+                <p class="h2 text-brand my-3">{{ tariff.price }} RUB</p>
+                <ul class="list-unstyled" style="line-height: 1.9;">
+                    <li>Срок: {{ tariff.duration_days }} дней</li>
+                    <li>Включено устройств: {{ tariff.base_limit }}</li>
+                    <li>Трафик: {{ tariff.quota }}</li>
+                </ul>
+                {% if tariff.loyalty_price %}<p class="small">При оплате продления до окончания действующей подписки: {{ tariff.loyalty_price }} RUB.</p>{% endif %}
+                {% if tariff.price_stars %}<p class="small">В Telegram без дополнительных устройств: {{ tariff.price_stars }} XTR (Telegram Stars), если этот способ доступен.</p>{% endif %}
+                {% if tariff.max_extra > 0 %}<p class="small text-secondary">Дополнительное устройство на срок тарифа: {{ tariff.extra_price }} RUB. Можно добавить до {{ tariff.max_extra }} устройств.</p>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <p class="mt-4">Скидки по промокодам, выбранные дополнительные устройства и итоговая сумма показываются перед оплатой. При докупке устройства в действующей подписке цена рассчитывается до ее окончания, но не ниже месячной стоимости.</p>
+    <a class="btn btn-brand me-2" href="/register">Оформить подписку</a>
+    {% if support_url %}<a class="btn btn-outline-light" href="{{ support_url }}">Открыть бот</a>{% endif %}
+    {% endif %}
+    <p class="small mt-4">Условия услуги: <a href="/terms">Пользовательское соглашение</a> · <a href="/privacy">Политика конфиденциальности</a> · <a href="/support">Личная поддержка</a></p>
+</section>
+{% endblock %}

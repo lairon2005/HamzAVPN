@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" href="/static/img/hamzavpn-logo.png">
+    <meta name="theme-color" content="#081222">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <title>{{ title|default('HamzAVPN') }}</title>
+
+    <!-- Telegram WebApp JS SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Bootstrap CSS ТОЛЬКО ради grid/utility-классов (.d-flex, .fw-bold, .row/.col и т.д.),
+         которыми пользуется styles.css и шаблоны сайта — без JS-бандла: модалки/collapse
+         на экранах Mini App не используются (навигация — SSR-переходы между /tma/*). -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+    <!-- Тот же CSS, что и у сайта — переиспользуем компоненты (.section-card, .copy-field,
+         .status-badge, .tariff-card, .data-table и т.д.), сверху лёгкий tma.css без navbar/footer. -->
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <link href="/static/css/tma.css" rel="stylesheet">
+</head>
+<body class="tma-body" data-tma-root="{{ 'true' if tma_root else 'false' }}">
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <div class="tma-content">
+        <a class="tma-brand" href="/tma/"><img class="brand-mark" src="/static/img/hamzavpn-logo.png" alt=""><span>HamzAVPN</span></a>
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Нижняя таб-навигация -->
+    <nav class="tma-tabbar">
+        <a href="/tma/" class="tma-tab {% if active_tab == 'home' %}active{% endif %}">
+            <i class="fas fa-house"></i><span>Главная</span>
+        </a>
+        <a href="/tma/import" class="tma-tab {% if active_tab == 'import' %}active{% endif %}">
+            <i class="fas fa-bolt"></i><span>Подключить</span>
+        </a>
+        <a href="/tma/tariffs" class="tma-tab {% if active_tab == 'tariffs' %}active{% endif %}">
+            <i class="fas fa-tags"></i><span>Тарифы</span>
+        </a>
+        <button type="button" class="tma-tab {% if active_tab in ('referral', 'history', 'support', 'devices') %}active{% endif %}" id="tmaMoreBtn">
+            <i class="fas fa-ellipsis"></i><span>Ещё</span>
+        </button>
+    </nav>
+
+    <!-- Шторка "Ещё" -->
+    <div class="tma-sheet-backdrop" id="tmaSheetBackdrop"></div>
+    <div class="tma-sheet" id="tmaSheet">
+        <div class="tma-sheet-handle"></div>
+        <a href="/tma/referral" class="tma-sheet-item">
+            <i class="fas fa-users"></i> Реферальная программа
+        </a>
+        <a href="/tma/devices" class="tma-sheet-item">
+            <i class="fas fa-mobile-alt"></i> Мои устройства
+        </a>
+        <a href="/tma/history" class="tma-sheet-item">
+            <i class="fas fa-receipt"></i> История платежей
+        </a>
+        <a href="/tma/support" class="tma-sheet-item">
+            <i class="fas fa-headset"></i> Поддержка
+        </a>
+        <a href="/documents" class="tma-sheet-item"><i class="fas fa-file-lines"></i> Документы сервиса</a>
+        <a href="/privacy" class="tma-sheet-item"><i class="fas fa-shield-halved"></i> Политика конфиденциальности</a>
+        <a href="/terms" class="tma-sheet-item"><i class="fas fa-file-contract"></i> Пользовательское соглашение</a>
+    </div>
+
+    <script src="/static/js/tma.js"></script>
+</body>
+</html>

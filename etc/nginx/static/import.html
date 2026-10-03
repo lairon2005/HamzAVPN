@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HamzAVPN | Импорт подписки</title>
+    <link rel="icon" type="image/png" href="/static/img/hamzavpn-logo.png">
+    <meta name="theme-color" content="#081222">
+    <!-- Иконки FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #163b75;
+            --primary-hover: #102c57;
+            --dark-bg: #081222;
+            --card-bg: rgba(14, 29, 51, 0.85);
+            --text-white: #ffffff;
+            --text-gray: #b2bfd2;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--dark-bg);
+            /* Красивый фоновый градиент */
+            background-image: radial-gradient(circle at top right, rgba(139, 184, 239, 0.15), transparent 40%),
+                              radial-gradient(circle at bottom left, rgba(0, 0, 0, 1), transparent 40%);
+            color: var(--text-white);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            padding: 20px;
+        }
+
+        /* Эффект стекла */
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 800;
+            margin-bottom: 30px;
+            display: inline-flex;
+            align-items: center;
+        }
+        
+        .logo i {
+            color: #8bb8ef;
+            margin-right: 10px;
+        }
+
+        h2 {
+            font-size: 22px;
+            margin-bottom: 15px;
+        }
+
+        p {
+            color: var(--text-gray);
+            font-size: 15px;
+            line-height: 1.5;
+            margin-bottom: 25px;
+        }
+
+        /* Анимация загрузки */
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(139, 184, 239, 0.3);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            margin: 0 auto 20px auto;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Кнопка ручного импорта */
+        .btn-main {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 16px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(139, 184, 239, 0.3);
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .btn-main:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+
+        .divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 30px 0;
+        }
+
+        .apps-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-gray);
+            margin-bottom: 20px;
+        }
+
+        /* Список приложений */
+        .app-list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .app-link {
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            color: var(--text-white);
+            transition: background 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .app-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .app-link i {
+            font-size: 20px;
+            width: 30px;
+        }
+        
+        .app-link span {
+            font-weight: 500;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body onload="doRedirect();">
+
+    <div class="container">
+        <div class="glass-card">
+            
+            <!-- Логотип -->
+            <div class="logo">
+                <img src="/static/img/hamzavpn-logo.png" alt="" width="36" height="36" style="object-fit:contain;margin-right:10px;"> HamzAVPN
+            </div>
+
+            <!-- Спиннер загрузки -->
+            <div id="loader" class="spinner"></div>
+
+            <!-- Заголовок -->
+            <h2 id="title">Импорт настроек...</h2>
+            
+            <!-- Текст статуса -->
+            <p id="message">Пожалуйста, подождите. Мы открываем приложение Happ для добавления вашей подписки.</p>
+
+            <!-- Кнопка ручного запуска (скрыта по умолчанию) -->
+            <a id="manualBtn" href="#" class="btn-main hidden">
+                <i class="fas fa-bolt"></i> Открыть приложение
+            </a>
+
+            <!-- Разделитель -->
+            <div class="divider"></div>
+
+            <!-- Секция скачивания -->
+            <div class="download-links">
+                <div class="apps-title">Нет приложения? Скачайте здесь:</div>
+                
+                <div class="app-list">
+                    <a href="https://play.google.com/store/apps/details?id=com.happproxy" class="app-link">
+                        <i class="fab fa-android" style="color: #a4c639;"></i>
+                        <span>Android (Happ)</span>
+                    </a>
+                    <a href="https://apps.apple.com/ru/app/happ-proxy-utility/id6783623643" class="app-link">
+                        <i class="fab fa-apple" style="color: #ffffff;"></i>
+                        <span>iOS (Happ)</span>
+                    </a>
+                    <a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe" class="app-link">
+                        <i class="fab fa-windows" style="color: #0078d7;"></i>
+                        <span>Windows (Happ)</span>
+                    </a>
+                    <a href="https://apps.apple.com/ru/app/happ-proxy-utility/id6783623643" class="app-link">
+                        <i class="fab fa-apple" style="color: #ffffff;"></i>
+                        <span>macOS (Happ)</span>
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+    function doRedirect() {
+        const params = new URLSearchParams(window.location.search);
+        const deepLink = params.get('deeplink');
+        
+        const loader = document.getElementById('loader');
+        const message = document.getElementById('message');
+        const title = document.getElementById('title');
+        const manualBtn = document.getElementById('manualBtn');
+
+        if (deepLink) {
+            // Устанавливаем ссылку на кнопку сразу
+            manualBtn.href = deepLink;
+            
+            // Пытаемся сделать редирект
+            window.location.href = deepLink;
+            
+            // Через 2 секунды меняем текст, если редирект не сработал (например, нет приложения)
+            setTimeout(() => {
+                loader.style.display = 'none'; // Скрываем крутилку
+                title.innerText = "Не открылось?";
+                message.innerHTML = "Если приложение не открылось автоматически, нажмите кнопку ниже.";
+                manualBtn.classList.remove('hidden'); // Показываем большую кнопку
+            }, 1500);
+
+        } else {
+            loader.style.display = 'none';
+            title.innerText = "Ошибка ссылки";
+            message.innerHTML = "Ссылка для импорта не найдена или повреждена.<br>Вернитесь в личный кабинет HamzAVPN.";
+            message.style.color = "#ff6b6b";
+        }
+    }
+    </script>
+</body>
+</html>

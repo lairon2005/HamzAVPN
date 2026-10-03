@@ -1,0 +1,38 @@
+{% extends "tma/base.html" %}
+
+{% block content %}
+<h5 class="fw-bold mb-3 animate-in"><i class="fas fa-receipt text-brand me-2"></i>История платежей</h5>
+
+{% if payments %}
+<div class="section-card animate-in">
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr><th>Дата</th><th>Сумма</th><th>Статус</th></tr>
+            </thead>
+            <tbody>
+            {% for p in payments %}
+                <tr>
+                    <td>{{ p.created_at.strftime('%d.%m.%Y') if p.created_at else '—' }}</td>
+                    <td>
+                        {{ "%.2f"|format(p.final_amount) }} ₽
+                        {% if p.discount_percent %}<span class="text-success-custom small">(−{{ p.discount_percent }}%)</span>{% endif %}
+                        {% if p.kind == 'devices' %}<div class="text-gray small">доп. устройства ({{ p.extra_devices }} шт.)</div>{% endif %}
+                    </td>
+                    <td>
+                        {% if p.status == 'succeeded' %}<span class="status-badge status-badge-active">Оплачен</span>
+                        {% elif p.status == 'pending' %}<span class="status-badge status-badge-pending">Ожидает</span>
+                        {% elif p.status == 'refunded' %}<span class="status-badge" style="background:var(--info-bg);color:var(--info);">Возврат</span>
+                        {% elif p.status == 'cancelled' %}<span class="status-badge" style="background:rgba(255,255,255,0.05);color:var(--text-muted);">Отменён</span>
+                        {% else %}<span class="status-badge status-badge-expired">Ошибка</span>{% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<p class="text-center text-gray py-5">Платежей пока нет.</p>
+{% endif %}
+{% endblock %}
