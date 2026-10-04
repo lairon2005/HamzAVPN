@@ -36,4 +36,4 @@ docker compose logs --tail=100 vpn_bot vpn_site nginx
 
 Для разработки с настроенной локальной базой: `python3 -m bot` (`USE_WEBHOOK=False`) и `uvicorn webapp.main:app --reload`. В обоих режимах callback Platega принимает бот на внутреннем порту 8081; наружу его проксирует nginx.
 
-Инструкции: [развёртывание и HTTPS](docs/deploy.md), [интеграция Platega](docs/platega.md), [установка Remnawave](docs/remnawave.md), [перенос тарифов](docs/tariffs.md), [оформление](docs/branding.md).
+Инструкции: [развёртывание и HTTPS](docs/deploy.md), [интеграция Platega](docs/platega.md), [установка Remnawave](docs/remnawave.md), [нода на сервере панели](docs/remnawave-node.md), [перенос тарифов](docs/tariffs.md), [оформление](docs/branding.md).
