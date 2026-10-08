@@ -8,7 +8,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 
 from tgbot.services import payment_service
-from platega.client import money, transaction_id, PlategaError
+from platega.client import money, transaction_id, PlategaError, verified_order_amount
 from database import user_repo, payment_repo
 from loader import logger, config, platega_client
 from remnawave.client import RemnawaveClient
@@ -196,23 +196,41 @@ async def platega_webhook_handler(request: web.Request):
                 order_id = transaction_id(payload['orderId'])
                 reservation = f'order:{order_id}'
                 order = await payment_repo.get_by_provider_id(reservation)
-                if (order is None or str(order.user_id) != str(payload.get('userId'))
-                        or money(details['amount']) != money(order.final_amount)
-                        or details['currency'] != order.currency):
+                if order is None or str(order.user_id) != str(payload.get('userId')):
+                    return web.Response(status=409)
+                try:
+                    verified_order_amount(verified, order.final_amount, order.currency,
+                                          order_id=order_id, user_id=order.user_id)
+                except ValueError:
+                    logger.warning('Отклонен callback: сумма или привязка резерва; платеж=%s', identifier)
                     return web.Response(status=409)
                 payment = await payment_repo.bind_transaction(reservation, identifier)
             except (ValueError, KeyError, TypeError, json.JSONDecodeError):
                 return web.Response(status=503)
-        if (verified['status'] != status or money(details['amount']) != callback_amount
-                or callback_amount != money(payment.final_amount)
+        try:
+            order_amount = verified_order_amount(
+                verified, payment.final_amount, payment.currency,
+                order_id=getattr(payment, 'order_id', None), user_id=payment.user_id)
+        except ValueError:
+            logger.warning('Отклонен callback: сумма или привязка заказа; платеж=%s; '
+                           'API сумма=%s; сумма заказа=%s',
+                           identifier, details['amount'], payment.final_amount)
+            return web.Response(status=409)
+        # Callback может содержать цену заказа или уже проверенную полную
+        # сумму с комиссией. Цена услуги в любом случае берётся из заказа.
+        if (verified['status'] != status
+                or callback_amount not in (order_amount, money(details['amount']))
                 or details['currency'] != currency or payment.currency != currency):
-            logger.warning('Отклонен callback с несовпадающими данными: %s', identifier)
+            logger.warning('Отклонен callback: платеж=%s; API статус=%s; callback статус=%s; '
+                           'callback сумма=%s; сумма заказа=%s; валюта совпадает=%s',
+                           identifier, verified['status'], status, callback_amount, order_amount,
+                           details['currency'] == currency == payment.currency)
             return web.Response(status=409)
 
         bot: Bot = request.app['bot']
         remnawave: RemnawaveClient = request.app['remnawave']
         if status == 'CONFIRMED':
-            result = await payment_service.process_successful_payment(identifier, callback_amount, currency)
+            result = await payment_service.process_successful_payment(identifier, order_amount, currency)
             if result is None:
                 return web.Response(status=200)
             if result.kind == 'devices':

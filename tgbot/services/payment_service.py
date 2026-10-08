@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from db import Tariff, Payment
 from tgbot.services.subscription_service import ExtensionResult
 from loader import logger
-from platega.client import PlategaError, money
+from platega.client import PlategaError, money, verified_order_amount
 
 
 @dataclass
@@ -225,12 +225,16 @@ class PaymentService:
         for payment in await self._payment_repo.get_unsettled():
             try:
                 verified = await platega_client.get_payment(payment.provider_payment_id)
-                details = verified['paymentDetails']
-                if money(details['amount']) != money(payment.final_amount) or details['currency'] != payment.currency:
+                try:
+                    order_amount = verified_order_amount(
+                        verified, payment.final_amount, payment.currency,
+                        order_id=payment.order_id, user_id=payment.user_id)
+                except ValueError:
                     logger.error('Несовпадение суммы при сверке платежа %s', payment.provider_payment_id)
+                    await self._payment_repo.mark_checked(payment.provider_payment_id)
                     continue
                 if verified['status'] == 'CONFIRMED':
-                    await self.process_successful_payment(payment.provider_payment_id, details['amount'])
+                    await self.process_successful_payment(payment.provider_payment_id, order_amount)
                 elif verified['status'] == 'CANCELED':
                     await self._payment_repo.cancel_if_pending(payment.provider_payment_id)
                 elif verified['status'] == 'CHARGEBACKED':

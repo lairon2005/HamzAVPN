@@ -61,6 +61,40 @@ def transaction_id(value) -> str:
         raise ValueError('Некорректный ID транзакции') from None
 
 
+def verified_order_amount(data: dict, expected_amount, currency: str = 'RUB', *,
+                          order_id: str | None = None, user_id: int | None = None) -> Decimal:
+    """Сумма заказа, независимо подтверждённая ответом GET Platega.
+
+    Наблюдаемый ответ с комиссией поверх цены содержит gross в paymentDetails,
+    comission отдельно и comissionType=0. Принимаем только точное равенство
+    gross - commission цене своего заказа, а не произвольную переплату.
+    """
+    try:
+        expected = money(expected_amount)
+        details = data['paymentDetails']
+        gross = money(details['amount'])
+        if details['currency'] != currency:
+            raise ValueError
+        if gross == expected:
+            return expected
+        commission = money(data['comission'])
+        commission_type = data['comissionType']
+        if (expected <= 0 or gross <= expected or commission <= 0
+                or gross - commission != expected
+                or type(commission_type) is not int or commission_type != 0):
+            raise ValueError
+        # На несовпадение цен допускается только надбавка к нашему же заказу.
+        # Пользователя и orderId берём из независимого GET, не из callback.
+        payload = json.loads(data['payload'])
+        if (not isinstance(payload, dict) or order_id is None or user_id is None
+                or transaction_id(payload['orderId']) != transaction_id(order_id)
+                or str(payload['userId']) != str(user_id)):
+            raise ValueError
+        return expected
+    except (ValueError, KeyError, TypeError):
+        raise ValueError('Сумма, валюта или привязка платежа не совпадает с заказом') from None
+
+
 @dataclass(frozen=True)
 class CreatedPayment:
     id: str
