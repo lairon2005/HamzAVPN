@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from db import Tariff, Payment
 from tgbot.services.subscription_service import ExtensionResult
 from loader import logger
-from platega.client import money
+from platega.client import PlategaError, money
 
 
 @dataclass
@@ -236,5 +236,15 @@ class PaymentService:
                 elif verified['status'] == 'CHARGEBACKED':
                     await self.process_refund(payment.provider_payment_id)
                 await self._payment_repo.mark_checked(payment.provider_payment_id)
+            except PlategaError as error:
+                # Отказ API не меняет финансовое состояние. Отмечаем попытку,
+                # чтобы неисправная строка не занимала начало очереди постоянно.
+                await self._payment_repo.mark_checked(payment.provider_payment_id)
+                log = logger.warning if error.retryable else logger.error
+                log('Сверка платежа %s отложена: %s; причина=%s; HTTP=%s',
+                    payment.provider_payment_id, error, error.reason, error.status_code)
+                if error.retryable or error.status_code in (401, 403):
+                    # Общая проблема шлюза: не посылаем ещё сотню запросов.
+                    break
             except Exception:
                 logger.exception('Сверка платежа %s отложена', payment.provider_payment_id)

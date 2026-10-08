@@ -1,8 +1,12 @@
 """Platega API: https://docs.platega.io/ (разовые платежи)."""
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from email.utils import parsedate_to_datetime
+import asyncio
 import hmac
 import json
+import math
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -11,6 +15,33 @@ import httpx
 
 class PlategaError(RuntimeError):
     """Ошибка шлюза без токенов, заголовков и тела ответа в сообщении."""
+
+    def __init__(self, message: str, *, reason: str = 'invalid_response',
+                 status_code: int | None = None, retryable: bool = False):
+        super().__init__(message)
+        self.reason = reason
+        self.status_code = status_code
+        self.retryable = retryable
+
+
+def _retry_delay(response: httpx.Response) -> float | None:
+    """Только короткий повтор; долгий Retry-After оставляем планировщику."""
+    value = response.headers.get('Retry-After')
+    if value is None:
+        return 0.5
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            deadline = parsedate_to_datetime(value)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+            delay = (deadline - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    if not math.isfinite(delay) or delay > 2:
+        return None
+    return max(0, delay)
 
 
 def money(value) -> Decimal:
@@ -67,16 +98,46 @@ class PlategaClient:
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
         if not self.configured:
-            raise PlategaError('Platega не настроена')
-        try:
-            response = await self._client.request(method, path, **kwargs)
-            response.raise_for_status()
-            data = response.json()
-            if not isinstance(data, dict):
-                raise ValueError
-            return data
-        except (httpx.HTTPError, ValueError, TypeError):
-            raise PlategaError('Platega временно недоступна или вернула некорректный ответ') from None
+            raise PlategaError('Platega не настроена', reason='configuration')
+        # Повторяем только чтение: повтор POST может создать второй платеж.
+        attempts = 2 if method.upper() == 'GET' else 1
+        for attempt in range(attempts):
+            delay = 0.5
+            try:
+                response = await self._client.request(method, path, **kwargs)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                retryable = status in (408, 429) or status >= 500
+                messages = {
+                    401: 'Platega отклонила авторизацию',
+                    403: 'Platega запретила доступ к операции',
+                    404: 'Platega не нашла запрошенную транзакцию',
+                    429: 'Platega ограничила частоту запросов',
+                }
+                message = messages.get(status, 'Platega вернула ошибку HTTP')
+                error = PlategaError(f'{message} (HTTP {status})', reason='http',
+                                     status_code=status, retryable=retryable)
+                delay = _retry_delay(exc.response)
+            except httpx.TimeoutException:
+                error = PlategaError('Истекло время ожидания ответа Platega',
+                                     reason='timeout', retryable=True)
+            except httpx.RequestError:
+                error = PlategaError('Не удалось соединиться с Platega',
+                                     reason='network', retryable=True)
+            else:
+                try:
+                    data = response.json()
+                    if not isinstance(data, dict):
+                        raise ValueError
+                    return data
+                except (ValueError, TypeError):
+                    raise PlategaError('Platega вернула некорректный JSON-ответ',
+                                       status_code=response.status_code) from None
+            if error.retryable and attempt + 1 < attempts and delay is not None:
+                await asyncio.sleep(delay)
+                continue
+            raise error from None
 
     async def create_payment(self, amount, description: str, return_url: str,
                              user_id: int, metadata: dict | None = None,
