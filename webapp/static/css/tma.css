@@ -59,7 +59,7 @@ body.tma-body {
     bottom: 0;
     z-index: 50;
     display: flex;
-    background: rgba(5, 13, 26, 0.96);
+    background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid var(--border-subtle);
@@ -205,7 +205,7 @@ body.tma-body {
     width: 32px;
     height: 32px;
     margin: 0 auto 16px;
-    border: 3px solid rgba(139, 184, 239, 0.2);
+    border: 3px solid rgba(0, 0, 0, 0.2);
     border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;

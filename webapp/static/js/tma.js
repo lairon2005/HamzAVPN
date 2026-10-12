@@ -14,13 +14,13 @@
         tg.ready();
         tg.expand();
         if (typeof tg.isVersionAtLeast === 'function') {
-            if (tg.isVersionAtLeast('6.9')) tg.setHeaderColor('#081222');
-            if (tg.isVersionAtLeast('6.1')) tg.setBackgroundColor('#081222');
+            if (tg.isVersionAtLeast('6.9')) tg.setHeaderColor('#ffffff');
+            if (tg.isVersionAtLeast('6.1')) tg.setBackgroundColor('#ffffff');
         }
         if (tg.MainButton && typeof tg.MainButton.setParams === 'function') {
-            tg.MainButton.setParams({ color: '#163b75', text_color: '#ffffff' });
+            tg.MainButton.setParams({ color: '#111111', text_color: '#ffffff' });
         }
-        // Тёмная тема сайта — не завязываемся на themeParams клиента (см. roadmap фаза 2).
+        // Чёрно-белая тема сайта — не завязываемся на themeParams клиента (см. roadmap фаза 2).
     }
 
     // ============================================================
