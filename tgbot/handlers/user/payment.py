@@ -431,6 +431,20 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
             f"<b>Итого: {checkout.total:.2f} ₽</b>"
         )
 
+    # Автопродление — фиксированная сумма без промокода; предлагаем, когда оно возможно.
+    autorenew_amount = None
+    if not discount_percent:
+        try:
+            from tgbot.services import recurring_service
+            from tgbot.services.recurring_service import RecurringError
+            if recurring_service.is_available():
+                offer = await recurring_service.build_offer(await user_repo.get(user_id), tariff, slots)
+                autorenew_amount = offer.amount
+        except Exception as exc:
+            # RecurringError — тариф не годится для подписки; остальное не должно ломать оплату.
+            if type(exc).__name__ != 'RecurringError':
+                logger.warning("Не удалось рассчитать автопродление для тарифа %s", tariff.id, exc_info=True)
+
     await call.message.edit_text(
         f"Вы выбрали тариф: <b>{escape(tariff.name)}</b>\n"
         f"Срок: <b>{tariff.duration_days} дней</b>\n"
@@ -442,7 +456,7 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
         f"<i>Трафик общий на аккаунт и от количества устройств не меняется.</i>",
         reply_markup=tariff_slots_keyboard(
             tariff.id, slots, device_settings.max_extra, device_settings.base_limit,
-            total_amount=checkout.total,
+            total_amount=checkout.total, autorenew_amount=autorenew_amount,
         ),
     )
 

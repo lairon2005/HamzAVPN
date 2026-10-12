@@ -19,7 +19,9 @@ async def fix_database():
             'ALTER TABLE payments ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP WITHOUT TIME ZONE',
             'ALTER TABLE payments ADD COLUMN IF NOT EXISTS traffic_reset_done BOOLEAN NOT NULL DEFAULT FALSE',
             'ALTER TABLE payments ADD COLUMN IF NOT EXISTS order_id VARCHAR(36) UNIQUE',
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_user_pending ON payments(user_id) WHERE status = 'pending' AND source != 'stars'",
+            # Списания подписок (source='auto') не конкурируют с ручным счётом пользователя.
+            'DROP INDEX IF EXISTS uq_payment_user_pending',
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_user_pending ON payments(user_id) WHERE status = 'pending' AND source NOT IN ('stars', 'auto')",
         ):
             await conn.execute(text(ddl))
     print('Схема HamzAVPN готова.')

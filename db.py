@@ -117,8 +117,8 @@ class Payment(Base):
     __tablename__ = 'payments'
     __table_args__ = (
         Index('uq_payment_user_pending', 'user_id', unique=True,
-              postgresql_where=text("status = 'pending' AND source != 'stars'"),
-              sqlite_where=text("status = 'pending' AND source != 'stars'")),
+              postgresql_where=text("status = 'pending' AND source NOT IN ('stars', 'auto')"),
+              sqlite_where=text("status = 'pending' AND source NOT IN ('stars', 'auto')")),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     order_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=True)
@@ -138,7 +138,7 @@ class Payment(Base):
     traffic_reset_done: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     sync_pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     referrer_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
-    source: Mapped[str] = mapped_column(String, default='bot')  # bot / web / tma / stars
+    source: Mapped[str] = mapped_column(String, default='bot')  # bot / web / tma / stars / auto (списание подписки)
 
     # 'subscription' — покупка/продление тарифа (в т.ч. вместе со слотами устройств),
     # 'devices' — докупка слотов в середине оплаченного периода (tariff_id = NULL,
@@ -158,6 +158,45 @@ class Payment(Base):
     # verbatim для рефандов через Bot API refundStarPayment(user_id, charge_id).
     # NULL для всех остальных источников (Platega-платежей).
     telegram_payment_charge_id: Mapped[str] = mapped_column(String, unique=True, nullable=True)
+
+
+class RecurringSubscription(Base):
+    """
+    Рекуррентная СБП-подписка Platega (автопродление).
+
+    Деньги списывает Platega по своему расписанию и присылает callback на каждое
+    списание; дни выдаются тем же конвейером, что и разовый платёж: каждое списание
+    становится строкой Payment (source='auto', provider_payment_id = ID списания).
+    Сумма и состав подписки (тариф, слоты устройств) фиксируются при создании —
+    Platega не умеет менять цену действующей подписки.
+
+    status: pending (ждём привязку счёта в банке, 30 минут) / active / past_due
+    (списание не прошло, повторов не будет) / cancelled / failed (привязка не удалась).
+    Живыми считаются pending и active — не больше одной на пользователя.
+    """
+    __tablename__ = 'recurring_subscriptions'
+    __table_args__ = (
+        Index('uq_recurring_user_live', 'user_id', unique=True,
+              postgresql_where=text("status IN ('pending', 'active')"),
+              sqlite_where=text("status IN ('pending', 'active')")),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    platega_subscription_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'), index=True)
+    tariff_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('tariffs.id'))
+    extra_devices: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default='RUB', server_default='RUB', nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default='pending', server_default='pending', nullable=False)
+    payment_url: Mapped[str] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String, default='bot')
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now)
+    activated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+    last_charge_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+    next_charge_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+    charges_ok: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    last_checked_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
 
 
 class LifecycleMessage(Base):

@@ -247,7 +247,8 @@ class FullLegalContentTests(unittest.TestCase):
         for expected in ("сохранность", "возвраты", "Интеллектуальная собственность", "Прекращение", "Тарифы"):
             self.assertIn(expected.lower(), (terms + "\n".join(heading for heading, _ in TERMS.sections)).lower())
         self.assertIn("не ограничивает обращение сроком в 24 часа", terms)
-        self.assertIn("не подключает автоматические списания", terms)
+        self.assertIn("только после явного подключения автопродления", terms)
+        self.assertIn("Отключить автопродление можно в любой момент", terms)
 
     def test_large_single_section_keeps_content_and_valid_escaped_html(self):
         import re

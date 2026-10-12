@@ -8,7 +8,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 
 from tgbot.services import payment_service
-from platega.client import money, transaction_id, PlategaError, verified_order_amount
+from platega.client import money, transaction_id, PlategaError, verified_order_amount, normalize_callback, callback_kind
 from database import user_repo, payment_repo
 from loader import logger, config, platega_client
 from remnawave.client import RemnawaveClient
@@ -121,6 +121,37 @@ async def _log_refund(bot: Bot, payment):
         logger.error(f"Failed to send refund log: {e}")
 
 
+async def notify_referrer(bot: Bot, result) -> None:
+    """Реферер узнаёт о первой оплате друга и о начисленных днях."""
+    if not (result.referrer_id and result.referrer_id > 0):
+        return
+    from tgbot.services.referral_service import REFERRER_PAYMENT_BONUS_DAYS
+    try:
+        await bot.send_message(result.referrer_id,
+            f'🎉 Друг оплатил подписку. Вам начислено <b>{REFERRER_PAYMENT_BONUS_DAYS} бонусных дней</b>.')
+    except Exception:
+        logger.warning('Не удалось уведомить реферера %s', result.referrer_id)
+
+
+async def _drop_autorenew_after_slots(bot: Bot, user_id: int) -> None:
+    """Сумма автопродления фиксирована: после докупки слотов оно отключается, чтобы
+    следующее списание не обнулило купленные устройства. Человека об этом предупреждаем."""
+    try:
+        from tgbot.services import recurring_service
+        dropped = await recurring_service.on_devices_changed(user_id)
+        if dropped and user_id > 0:
+            from tgbot.keyboards.inline import autorenew_prompt_keyboard
+            await bot.send_message(
+                user_id,
+                '🔁 <b>Автопродление отключено</b>, потому что вы изменили число устройств, '
+                'а сумма автопродления фиксирована. Деньги больше списываться не будут. '
+                'Подключите его заново — с учётом новых устройств.',
+                reply_markup=autorenew_prompt_keyboard(),
+            )
+    except Exception:
+        logger.exception('Не удалось отключить автопродление после докупки устройств user=%s', user_id)
+
+
 async def _notify_slots_purchased(bot: Bot, result) -> None:
     """Слоты начислены — сообщаем новый лимит и ведём на экран устройств."""
     from tgbot.keyboards.inline import back_to_main_menu_keyboard
@@ -170,12 +201,26 @@ async def _log_device_slots_purchase(bot: Bot, result) -> None:
 
 async def platega_webhook_handler(request: web.Request):
     """Аутентификация callback + независимая проверка транзакции через API."""
-    if not platega_client.authenticate_callback(request.headers):
+    authenticated = platega_client.authenticate_callback(request.headers)
+    credentials_sent = any(name in request.headers for name in ('X-MerchantId', 'X-Secret'))
+    if credentials_sent and not authenticated:
         return web.Response(status=401)
     try:
         body = await request.json()
         if not isinstance(body, dict):
             raise ValueError
+        body = normalize_callback(body)
+    except (ValueError, json.JSONDecodeError):
+        return web.Response(status=401 if not authenticated else 400)
+    kind = callback_kind(body)
+    if kind != 'payment':
+        # Автопродление: списания и смена статуса подписки. Статус подписки Platega может
+        # прислать без заголовков, поэтому такие запросы проверяются через API, а не по секрету.
+        from tgbot.handlers.recurring_webhook import handle_subscription_callback
+        return await handle_subscription_callback(request, body, kind, authenticated)
+    if not authenticated:
+        return web.Response(status=401)
+    try:
         identifier = transaction_id(body['id'])
         callback_amount = money(body['amount'])
         currency = body['currency']
@@ -237,14 +282,9 @@ async def platega_webhook_handler(request: web.Request):
                 await _log_device_slots_purchase(bot, result)
                 if result.payment.user_id > 0:
                     await _notify_slots_purchased(bot, result)
+                await _drop_autorenew_after_slots(bot, result.payment.user_id)
                 return web.Response(status=200)
-            if result.referrer_id and result.referrer_id > 0:
-                from tgbot.services.referral_service import REFERRER_PAYMENT_BONUS_DAYS
-                try:
-                    await bot.send_message(result.referrer_id,
-                        f'🎉 Друг оплатил подписку. Вам начислено <b>{REFERRER_PAYMENT_BONUS_DAYS} бонусных дней</b>.')
-                except Exception:
-                    logger.warning('Не удалось уведомить реферера %s', result.referrer_id)
+            await notify_referrer(bot, result)
             await _log_transaction(bot, result.payment.user_id, result.tariff.name,
                 result.payment.final_amount, result.extension.is_new_user, payment=result.payment)
             if result.payment.user_id > 0:

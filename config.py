@@ -53,6 +53,9 @@ class Platega:
     merchant_id: str
     secret: str
     api_url: str = "https://app.platega.io"
+    # Автопродление (рекуррентные СБП-подписки). Метод «Подписка» включается в кассе
+    # отдельно по заявке в Platega; до этого создание подписки отвечает 400.
+    recurring_enabled: bool = False
 
     @staticmethod
     def from_env(env: Env):
@@ -60,6 +63,7 @@ class Platega:
             merchant_id=env.str("PLATEGA_MERCHANT_ID", default="").strip(),
             secret=env.str("PLATEGA_SECRET", default="").strip(),
             api_url=env.str("PLATEGA_API_URL", default="https://app.platega.io").strip(),
+            recurring_enabled=env.bool("PLATEGA_RECURRING_ENABLED", default=False),
         )
 @dataclass
 class DataBase:

@@ -89,6 +89,10 @@ async def check_subscriptions(bot: Bot):
     errors = 0
     days_left = 7
     users_to_remind = await user_repo.get_with_expiring_subscription(days_left)
+    # Подписка продлится сама — напоминание «продлите» только собьёт с толку.
+    from database import recurring_repo
+    autorenew_ids = await recurring_repo.get_active_user_ids()
+    users_to_remind = [u for u in users_to_remind if u.user_id not in autorenew_ids]
     if not users_to_remind:
         return
 
@@ -211,12 +215,16 @@ async def lifecycle_renewal_reminders(bot: Bot):
 
     async def _run() -> None:
         nonlocal sent, errors
+        from database import recurring_repo
+        # С действующим автопродлением подписка продлится сама: напоминания до истечения и
+        # «подписка закончилась» (списание может прийти с задержкой) не шлём.
+        autorenew_ids = await recurring_repo.get_active_user_ids()
 
         # --- D-3 и D-1 (до истечения) ---
         for days_left, step_name in ((3, 'd-3'), (1, 'd-1')):
             users = await user_repo.get_with_expiring_subscription(days_left)
             for user in users:
-                if not user.subscription_end_date:
+                if not user.subscription_end_date or user.user_id in autorenew_ids:
                     continue
                 step = f"{step_name}_{_cycle_key(user.subscription_end_date)}"
                 if await lifecycle_repo.was_sent(user.user_id, 'renewal', step):
@@ -248,6 +256,8 @@ async def lifecycle_renewal_reminders(bot: Bot):
         for days_ago, step_name in ((0, 'd0'), (2, 'd2_grace'), (5, 'd5_discount')):
             users = await user_repo.get_with_subscription_ended_at_least(days_ago)
             for user in users:
+                if step_name == 'd0' and user.user_id in autorenew_ids:
+                    continue
                 is_promo = step_name == 'd5_discount'
                 step = f"{step_name}_{_cycle_key(user.subscription_end_date)}"
                 if is_promo:
@@ -766,6 +776,25 @@ async def reconcile_payments():
 
 # --- 5. Функция для добавления всех задач в планировщик ---
 
+# --- 4.7 СВЕРКА АВТОПРОДЛЕНИЯ (рекуррентные подписки Platega) ---
+
+async def reconcile_recurring(bot: Bot):
+    """Брошенные привязки счёта, внешние отмены, потерянные callback'и списаний."""
+    from tgbot.services import recurring_service
+    from tgbot.handlers.recurring_webhook import notify_status_change
+
+    try:
+        changes = await recurring_service.reconcile()
+    except Exception:
+        logger.exception("Не удалось выполнить сверку автопродления")
+        return
+    for sub, old, new in changes:
+        try:
+            await notify_status_change(bot, sub, old, new)
+        except Exception:
+            logger.exception("Не удалось уведомить об изменении автопродления user=%s", sub.user_id)
+
+
 def schedule_jobs(scheduler: AsyncIOScheduler, bot: Bot):
     """
     Добавляет все фоновые задачи в планировщик.
@@ -816,6 +845,11 @@ def schedule_jobs(scheduler: AsyncIOScheduler, bot: Bot):
         minute=0,
         kwargs={'bot': bot}
     )
+
+    # Сверка автопродления с Platega: незавершённые привязки (30 мин на банк) и
+    # активные подписки раз в несколько часов.
+    scheduler.add_job(reconcile_recurring, trigger='interval', minutes=10,
+                      kwargs={'bot': bot}, max_instances=1, coalesce=True)
 
     # Сверка лимитов устройств — каждый час: страхует неприменённый после оплаты
     # лимит и гасит слоты, пережившие свою подписку.

@@ -177,7 +177,7 @@ class PaymentRepository:
         async with self._session_maker() as session:
             stmt = select(Payment).where(
                 Payment.user_id == user_id,
-                Payment.status == 'pending', Payment.source != 'stars'
+                Payment.status == 'pending', Payment.source.notin_(('stars', 'auto'))
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
@@ -186,7 +186,7 @@ class PaymentRepository:
         async with self._session_maker() as session:
             cutoff = datetime.now() - timedelta(minutes=minutes)
             stmt = select(Payment).where(
-                Payment.status == 'pending', Payment.source != 'stars',
+                Payment.status == 'pending', Payment.source.notin_(('stars', 'auto')),
                 Payment.created_at < cutoff
             )
             result = await session.execute(stmt)
@@ -451,11 +451,21 @@ class PaymentRepository:
         async with self._session_maker() as session:
             cutoff = datetime.now() - timedelta(days=180)
             return (await session.scalars(select(Payment).where(
-                Payment.source != 'stars',
+                # Списания подписок создаются только по подтверждённому callback, а их
+                # ID не обязан находиться через GET /transaction — сверять нечего.
+                Payment.source.notin_(('stars', 'auto')),
                 Payment.status.in_(('pending', 'cancelled', 'succeeded')),
                 ~Payment.provider_payment_id.startswith('order:'),
                 Payment.created_at >= cutoff,
             ).order_by(Payment.last_checked_at.asc().nullsfirst(), Payment.id).limit(100))).all()
+
+    async def count_auto_since(self, user_id: int, since: datetime) -> int:
+        """Сколько списаний автопродления зачислено пользователю с момента создания подписки."""
+        async with self._session_maker() as session:
+            return await session.scalar(select(func.count(Payment.id)).where(
+                Payment.user_id == user_id, Payment.source == 'auto',
+                Payment.status.in_(('succeeded', 'refunded')),
+                Payment.created_at >= since)) or 0
 
     async def mark_checked(self, identifier: str):
         async with self._session_maker() as session:

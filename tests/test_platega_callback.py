@@ -48,11 +48,12 @@ class CallbackTests(unittest.IsolatedAsyncioTestCase):
                 'id': ID, 'amount': 399, 'currency': 'RUB', 'status': 'CONFIRMED', 'paymentMethod': 2}),
             app={'bot': AsyncMock(), 'remnawave': Mock()})
 
-    async def test_unauthorized_callback_does_not_read_body_or_touch_api(self):
+    async def test_unauthorized_callback_does_not_touch_api_or_credit(self):
+        # Тело читается: статус подписки Platega может прислать без заголовков, и такой запрос
+        # проверяется через API. Для обычного платежа без секрета — 401 и никаких действий.
         request = self.request(headers={})
         result = await self.module.platega_webhook_handler(request)
         self.assertEqual(result.status, 401)
-        request.json.assert_not_awaited()
         self.client.get_payment.assert_not_awaited()
         self.service.process_successful_payment.assert_not_awaited()
 

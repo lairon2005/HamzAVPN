@@ -159,6 +159,16 @@ def load_payment_router_module():
     tgbot_services_module.promo_service = AsyncMock()
     tgbot_services_module.subscription_service = AsyncMock()
     tgbot_services_module.device_slot_service = AsyncMock()
+    # Автопродление: по умолчанию недоступно, build_offer/start/cancel/get_view — асинхронные.
+    recurring = Mock()
+    recurring.is_available = Mock(return_value=False)
+    recurring.build_offer = AsyncMock()
+    recurring.start = AsyncMock()
+    recurring.cancel = AsyncMock()
+    recurring.get_view = AsyncMock(return_value=None)
+    tgbot_services_module.recurring_service = recurring
+    recurring_module = types.ModuleType("tgbot.services.recurring_service")
+    recurring_module.RecurringError = type("RecurringError", (Exception,), {})
     tgbot_services_payment_module = types.ModuleType("tgbot.services.payment")
     tgbot_services_payment_module.create_payment = Mock()
     tgbot_services_pricing_module = types.ModuleType("tgbot.services.pricing")
@@ -200,6 +210,7 @@ def load_payment_router_module():
             "tgbot.services.pricing": tgbot_services_pricing_module,
             "tgbot.services.device_pricing": _real_device_pricing(),
             "tgbot.services.promo_code_service": tgbot_services_promo_code_service_module,
+            "tgbot.services.recurring_service": recurring_module,
             "config": config_module,
         },
     )

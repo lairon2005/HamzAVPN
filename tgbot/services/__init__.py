@@ -1,8 +1,8 @@
 from database import (
     user_repo, tariff_repo, promo_repo, channel_repo, stats_repo,
-    payment_repo, lifecycle_repo, settings_repo,
+    payment_repo, lifecycle_repo, settings_repo, recurring_repo,
 )
-from loader import remnawave_client
+from loader import remnawave_client, config
 
 from .subscription_service import SubscriptionService
 from .referral_service import ReferralService
@@ -15,6 +15,7 @@ from .key_service import KeyService
 from .admin_stats_service import AdminStatsService
 from .payment_service import PaymentService
 from .payment_method_service import PaymentMethodService
+from .recurring_service import RecurringService
 from .support_service import SupportService
 
 subscription_service = SubscriptionService(user_repo, remnawave_client)
@@ -30,5 +31,9 @@ payment_method_service = PaymentMethodService()
 payment_service = PaymentService(
     subscription_service, referral_service, user_repo, tariff_repo, payment_repo,
     device_slot_service=device_slot_service,
+)
+recurring_service = RecurringService(
+    recurring_repo, payment_repo, payment_service, tariff_repo, user_repo, device_slot_service,
+    enabled=config.platega.recurring_enabled,
 )
 support_service = SupportService(user_repo)

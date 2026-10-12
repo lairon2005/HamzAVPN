@@ -37,6 +37,17 @@
         </p>
     </div>
 
+    <label class="section-card animate-in mt-3 d-flex align-items-start gap-2" for="autorenewToggle" style="cursor:pointer">
+        <input type="checkbox" class="form-check-input mt-1" id="autorenewToggle">
+        <span>
+            <span class="fw-bold"><i class="fas fa-sync-alt text-brand me-2"></i>Автопродление</span>
+            <span class="d-block text-gray small">
+                Подписка продлевается сама: деньги списываются через СБП по сроку тарифа.
+                Отключить можно в любой момент. С промокодом не сочетается.
+            </span>
+        </span>
+    </label>
+
     <div class="tma-tariffs animate-in animate-in-delay-1">
         {% for tariff in tariffs %}
             {% set is_popular = (tariffs|length >= 3 and loop.index == 2) %}

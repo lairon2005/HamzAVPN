@@ -309,9 +309,14 @@
             </div>
             {% endif %}
 
+            <div class="section-card animate-in" id="autorenewCard" hidden>
+                <h5 class="fw-bold mb-2"><i class="fas fa-sync-alt text-brand me-2"></i>Автопродление</h5>
+                <div id="autorenewBody" class="small"></div>
+            </div>
+
             <div class="section-card animate-in">
                 <h5 class="fw-bold mb-2"><i class="fas fa-credit-card text-brand me-2"></i>Оплата через Platega</h5>
-                <p class="text-gray small mb-0">Выберите тариф и перейдите к оплате. Итоговая стоимость и доступные способы оплаты отображаются перед подтверждением. Каждый заказ оплачивается отдельно.</p>
+                <p class="text-gray small mb-0">Выберите тариф и перейдите к оплате. Итоговая стоимость и доступные способы оплаты отображаются перед подтверждением. Можно оплатить разово или включить автопродление: тогда подписка продлевается сама через СБП, а отключить её можно в любой момент.</p>
             </div>
 
             {% elif error %}
@@ -386,6 +391,19 @@
                                 onclick="updateSlotCount(1)">+</button>
                     </div>
                 </div>
+
+                <!-- Автопродление: рекуррентная СБП-подписка Platega. Без промокода -->
+                <label class="d-flex align-items-start gap-2 mb-4 p-3" for="autorenewToggle"
+                       style="border: 1px solid var(--border-card); border-radius: 10px; cursor: pointer;">
+                    <input type="checkbox" class="form-check-input mt-1" id="autorenewToggle">
+                    <span>
+                        <span class="fw-bold"><i class="fas fa-sync-alt text-brand me-2"></i>Автопродление</span>
+                        <span class="d-block text-gray small">
+                            Подписка продлевается сама: деньги списываются через СБП по сроку тарифа.
+                            Отключить можно в любой момент. С промокодом не сочетается.
+                        </span>
+                    </span>
+                </label>
 
                 <div class="row row-cols-1 row-cols-md-3 g-4 justify-content-center" id="tariffCards">
                     {% for tariff in tariffs %}

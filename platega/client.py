@@ -2,11 +2,11 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from email.utils import parsedate_to_datetime
+import math
 import asyncio
+from email.utils import parsedate_to_datetime
 import hmac
 import json
-import math
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -93,6 +93,94 @@ def verified_order_amount(data: dict, expected_amount, currency: str = 'RUB', *,
         return expected
     except (ValueError, KeyError, TypeError):
         raise ValueError('Сумма, валюта или привязка платежа не совпадает с заказом') from None
+
+
+# Интервалы рекуррентных СБП-подписок Platega: 1 день, 2 неделя, 3 месяц (30 дней), 4 год.
+# Лимит intervalCount зависит от интервала.
+INTERVAL_DAY, INTERVAL_WEEK, INTERVAL_MONTH, INTERVAL_YEAR = 1, 2, 3, 4
+_INTERVAL_LIMITS = {INTERVAL_DAY: 31, INTERVAL_WEEK: 4, INTERVAL_MONTH: 12, INTERVAL_YEAR: 3}
+SUBSCRIPTION_STATUSES = ('PendingAgreement', 'Active', 'PastDue', 'Cancelled', 'Failed')
+
+
+def subscription_interval(duration_days: int) -> tuple[int, int] | None:
+    """Период подписки Platega, который соответствует сроку тарифа, либо None.
+
+    Месяц у Platega — ровно 30 дней, год — 365: так срок, который платит клиент,
+    совпадает со сроком, который мы выдаём. Если срок не ложится на допустимые
+    интервалы, автопродление для такого тарифа не предлагается.
+    """
+    try:
+        days = int(duration_days)
+    except (TypeError, ValueError):
+        return None
+    if days <= 0:
+        return None
+    candidates = []
+    if days % 365 == 0:
+        candidates.append((INTERVAL_YEAR, days // 365))
+    if days % 30 == 0:
+        candidates.append((INTERVAL_MONTH, days // 30))
+    if days % 7 == 0:
+        candidates.append((INTERVAL_WEEK, days // 7))
+    candidates.append((INTERVAL_DAY, days))
+    for interval, count in candidates:
+        if 1 <= count <= _INTERVAL_LIMITS[interval]:
+            return interval, count
+    return None
+
+
+def normalize_callback(body: dict) -> dict:
+    """Ключи callback приходят то строчными (`id`), то заглавными (`Id`) — приводим к строчным."""
+    return {str(key).lower(): value for key, value in body.items()}
+
+
+def parse_platega_time(value) -> datetime | None:
+    """ISO-время Platega (UTC) → наивное локальное время, как хранятся даты в БД."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone().replace(tzinfo=None)
+
+
+SUBSCRIPTION_CALLBACK_STATUSES = (
+    'SUBSCRIPTION_ACTIVATED', 'SUBSCRIPTION_PAST_DUE', 'SUBSCRIPTION_CANCELLED', 'SUBSCRIPTION_FAILED',
+)
+
+
+def callback_kind(data: dict) -> str:
+    """Тип callback по нормализованному телу: 'payment', 'subscription_charge' или 'subscription_status'.
+
+    Статус подписки — отдельные значения SUBSCRIPTION_*; списание по подписке отличается от
+    обычного платежа только полями SubscriptionId и NextChargeAt.
+    """
+    if str(data.get('status', '')).upper() in SUBSCRIPTION_CALLBACK_STATUSES:
+        return 'subscription_status'
+    if data.get('subscriptionid'):
+        return 'subscription_charge'
+    return 'payment'
+
+
+def parse_charge(body: dict) -> dict:
+    """Поля callback списания в единой форме (ключи Platega приходят в разном регистре)."""
+    data = normalize_callback(body)
+    return {
+        'id': data.get('id'), 'amount': data.get('amount'), 'currency': data.get('currency'),
+        'status': data.get('status'), 'subscription_id': data.get('subscriptionid'),
+        'next_charge_at': parse_platega_time(data.get('nextchargeat')),
+    }
+
+
+def whole_rubles(value) -> int:
+    """Сумма регулярного списания — целое число рублей (API подписок не принимает копейки)."""
+    amount = money(value)
+    if amount != amount.to_integral_value() or amount <= 0:
+        raise ValueError('Сумма автопродления должна быть целым числом рублей')
+    return int(amount)
 
 
 @dataclass(frozen=True)
@@ -217,6 +305,55 @@ class PlategaClient:
             return data
         except (KeyError, ValueError, TypeError):
             raise PlategaError('Platega вернула некорректные детали транзакции') from None
+
+    async def create_subscription(self, amount, description: str,
+                                  interval: int, interval_count: int) -> CreatedPayment:
+        """Рекуррентная СБП-подписка: платёж при создании не проходит, списания делает Platega.
+
+        `transactionId` в ответе — ID подписки; по нему приходят callback'и.
+        Плательщика нужно сразу отправить на `redirect`: на привязку счёта даётся 30 минут.
+        """
+        amount = whole_rubles(amount)
+        if interval not in _INTERVAL_LIMITS or not 1 <= interval_count <= _INTERVAL_LIMITS[interval]:
+            raise ValueError('Недопустимый период подписки')
+        body = {
+            'paymentMethod': 6,
+            'paymentDetails': {'amount': amount, 'currency': 'RUB',
+                               'interval': interval, 'intervalCount': interval_count},
+            'description': description[:255],
+        }
+        # Как и разовый платёж, создание не повторяется автоматически.
+        data = await self._request('POST', '/transaction/process', json=body)
+        try:
+            identifier = transaction_id(data['transactionId'])
+            url = data.get('redirect') or data['url']
+            parsed = urlparse(url)
+            if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password:
+                raise ValueError
+            status = data['status']
+            if status != 'PENDING':
+                raise ValueError
+            return CreatedPayment(identifier, url, status)
+        except (KeyError, ValueError, TypeError):
+            raise PlategaError('Platega вернула некорректную ссылку подписки') from None
+
+    async def get_subscription(self, identifier: str) -> dict:
+        identifier = transaction_id(identifier)
+        data = await self._request('GET', f'/subscription/{identifier}')
+        try:
+            if transaction_id(data['id']) != identifier:
+                raise ValueError
+            if data['status'] not in SUBSCRIPTION_STATUSES:
+                raise ValueError
+            whole_rubles(data['amount'])
+            return data
+        except (KeyError, ValueError, TypeError):
+            raise PlategaError('Platega вернула некорректные детали подписки') from None
+
+    async def cancel_subscription(self, identifier: str) -> None:
+        """Останавливает будущие списания. Метод идемпотентен на стороне Platega."""
+        identifier = transaction_id(identifier)
+        await self._request('POST', f'/subscription/{identifier}/cancel')
 
     async def aclose(self):
         await self._client.aclose()

@@ -8,7 +8,10 @@ from pydantic import BaseModel
 
 from tgbot.services import (
     payment_service, promo_service, subscription_service, device_slot_service,
+    recurring_service,
 )
+from tgbot.services.recurring_service import RecurringError
+from platega.client import PlategaError
 from tgbot.services.pricing import effective_price
 from tgbot.services.device_pricing import build_checkout
 from tgbot.services.promo_code_service import PromoClaimError
@@ -35,6 +38,9 @@ class PaymentRequest(BaseModel):
     # Сколько доп. устройств оплачивается вместе с тарифом. Скидка на них не
     # распространяется — см. build_checkout.
     extra_devices: int = 0
+    # Подключить автопродление (рекуррентная СБП-подписка Platega). Без промокода:
+    # сумма подписки фиксирована.
+    autorenew: bool = False
 
 
 async def _prepare_checkout(payload: PaymentRequest, user):
@@ -58,18 +64,29 @@ async def _prepare_checkout(payload: PaymentRequest, user):
     return tariff, checkout, validated_promo, discount, slots
 
 
-def _quote_response(checkout, discount):
+def _quote_response(checkout, discount, autorenew_amount=None):
     return {'final_amount': checkout.total, 'original_amount': checkout.original_total,
             'tariff_amount': checkout.tariff_final, 'slots_amount': checkout.slots_cost,
-            'applied_discount': discount, 'currency': 'RUB', 'extra_devices': checkout.slots}
+            'applied_discount': discount, 'currency': 'RUB', 'extra_devices': checkout.slots,
+            # Сумма регулярного списания, если для этого тарифа доступно автопродление.
+            'autorenew_amount': autorenew_amount}
+
+
+async def _autorenew_amount(user, tariff, slots, discount):
+    if discount or not recurring_service.is_available():
+        return None
+    try:
+        return (await recurring_service.build_offer(user, tariff, slots)).amount
+    except RecurringError:
+        return None
 
 
 @router.post('/quote')
 async def quote_payment_route(payload: PaymentRequest, user: User = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail='Unauthorized')
-    _, checkout, _, discount, _ = await _prepare_checkout(payload, user)
-    return _quote_response(checkout, discount)
+    tariff, checkout, _, discount, slots = await _prepare_checkout(payload, user)
+    return _quote_response(checkout, discount, await _autorenew_amount(user, tariff, slots, discount))
 
 
 @router.post("/create")
@@ -79,6 +96,8 @@ async def create_payment_route(payload: PaymentRequest, user: User = Depends(get
     if await payment_service.has_pending_payment(user.user_id):
         raise HTTPException(status_code=409, detail='У вас уже есть неоплаченный счёт. Отмените его или завершите оплату.')
     tariff, checkout, validated_promo, discount, slots = await _prepare_checkout(payload, user)
+    if payload.autorenew:
+        return await _create_autorenew(payload, user, tariff, checkout, validated_promo, slots)
     if payload.source == 'tma' and config.tg_bot.tg_bot_username:
         return_url = f"https://t.me/{config.tg_bot.tg_bot_username}/{config.tg_bot.tma_app_name}?startapp=paid"
     else:
@@ -108,6 +127,59 @@ async def create_payment_route(payload: PaymentRequest, user: User = Depends(get
             await promo_service.release(user.user_id, validated_promo)
         logger.exception('Ошибка создания счета Platega')
         raise HTTPException(status_code=503, detail='Платежный сервис временно недоступен')
+
+
+async def _create_autorenew(payload, user, tariff, checkout, validated_promo, slots):
+    """Подписка Platega вместо разового счёта: ссылка ведёт на привязку счёта в банке."""
+    if validated_promo:
+        raise HTTPException(status_code=400, detail='Автопродление нельзя совмещать с промокодом')
+    try:
+        sub, url = await recurring_service.start(user.user_id, tariff.id, slots, source=payload.source)
+    except RecurringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except PendingPaymentError:
+        raise HTTPException(status_code=409, detail='У вас уже есть неоплаченный счет')
+    except PlategaError:
+        logger.exception('Ошибка создания подписки Platega')
+        raise HTTPException(status_code=503, detail='Платежный сервис временно недоступен')
+    return {'payment_url': url, 'autorenew': True,
+            **_quote_response(checkout, 0, sub.amount), 'final_amount': sub.amount}
+
+
+def _autorenew_view(sub, tariff):
+    if sub is None:
+        return {'status': None}
+    return {
+        'status': sub.status, 'amount': sub.amount, 'extra_devices': sub.extra_devices,
+        'tariff_name': tariff.name if tariff else None,
+        'period_days': tariff.duration_days if tariff else None,
+        'next_charge_at': sub.next_charge_at.strftime('%d.%m.%Y') if sub.next_charge_at else None,
+        'payment_url': sub.payment_url if sub.status == 'pending' else None,
+    }
+
+
+@router.get('/autorenew')
+async def autorenew_status_route(user: User = Depends(get_current_user)):
+    """Состояние автопродления для личного кабинета и Mini App."""
+    if not user:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    sub = await recurring_service.get_view(user.user_id)
+    tariff = await tariff_repo.get_by_id(sub.tariff_id) if sub else None
+    return _autorenew_view(sub, tariff)
+
+
+@router.post('/autorenew/cancel')
+async def autorenew_cancel_route(user: User = Depends(get_current_user)):
+    """Отключает автопродление: деньги перестают списываться сразу, оплаченный срок остаётся."""
+    if not user:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    try:
+        cancelled = await recurring_service.cancel(user.user_id)
+    except PlategaError:
+        raise HTTPException(status_code=503, detail='Платежный сервис временно недоступен. Повторите через минуту.')
+    if cancelled is None:
+        raise HTTPException(status_code=404, detail='Автопродление не подключено')
+    return {'cancelled': True}
 
 
 class PromoValidateRequest(BaseModel):

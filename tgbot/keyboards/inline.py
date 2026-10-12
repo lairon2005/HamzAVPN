@@ -134,6 +134,7 @@ def profile_keyboard(subscription_url: str, show_referral_cta: bool = False) -> 
     builder.button(text="🔗 Открыть страницу подписки", url=subscription_url)
     builder.button(text="🔄 Обновить", callback_data="my_profile")
     builder.button(text="📱 Мои устройства", callback_data="my_devices")
+    builder.button(text="🔁 Автопродление", callback_data="autorenew")
     if show_referral_cta:
         builder.button(text="🎁 Поделиться и получить дни", callback_data="referral_program")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
@@ -232,7 +233,8 @@ def payment_method_choice_keyboard(tariff_id: int, slots: int = 0,
 
 
 def tariff_slots_keyboard(tariff_id: int, slots: int, max_slots: int,
-                          base_limit: int, *, total_amount: float) -> InlineKeyboardMarkup:
+                          base_limit: int, *, total_amount: float,
+                          autorenew_amount: int | None = None) -> InlineKeyboardMarkup:
     """
     Шаг чекаута «сколько устройств». Степпер −/+ и переход к оплате.
 
@@ -254,8 +256,54 @@ def tariff_slots_keyboard(tariff_id: int, slots: int, max_slots: int,
     builder.row(InlineKeyboardButton(
         text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"tpay_{tariff_id}_{slots}"
     ))
+    if autorenew_amount:
+        builder.row(InlineKeyboardButton(
+            text=f"🔁 С автопродлением · {autorenew_amount} ₽", callback_data=f"tauto_{tariff_id}_{slots}"
+        ))
     builder.row(InlineKeyboardButton(text="📄 Документы и тарифы", callback_data="documents"))
     builder.row(InlineKeyboardButton(text="⬅️ К выбору тарифа", callback_data="buy_subscription"))
+    return builder.as_markup()
+
+
+def autorenew_prompt_keyboard() -> InlineKeyboardMarkup:
+    """Под уведомлениями об отключении или сбое автопродления."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💎 Продлить подписку", callback_data="buy_subscription")
+    builder.button(text="🔁 Об автопродлении", callback_data="autorenew")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def autorenew_manage_keyboard() -> InlineKeyboardMarkup:
+    """Под уведомлениями об успешном списании."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⚙️ Управление автопродлением", callback_data="autorenew")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def autorenew_screen_keyboard(status: str | None, payment_url: str | None = None) -> InlineKeyboardMarkup:
+    """Экран автопродления: действия зависят от состояния подписки."""
+    builder = InlineKeyboardBuilder()
+    if status == 'active':
+        builder.button(text="❌ Отключить автопродление", callback_data="autorenew_off")
+    elif status == 'pending':
+        if payment_url:
+            builder.button(text="💳 Привязать счёт в банке", url=payment_url)
+        builder.button(text="❌ Отменить", callback_data="autorenew_off")
+    else:
+        builder.button(text="💎 Выбрать тариф", callback_data="buy_subscription")
+    builder.button(text="📄 Документы и тарифы", callback_data="documents")
+    builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def autorenew_confirm_off_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, отключить", callback_data="autorenew_off_yes")
+    builder.button(text="⬅️ Оставить", callback_data="autorenew")
+    builder.adjust(1)
     return builder.as_markup()
 
 

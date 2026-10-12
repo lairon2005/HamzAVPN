@@ -119,8 +119,27 @@ async function initPayment(tariffName, price, btn, allowCancelRetry = true) {
         if (activePromo) {
             payload.promo_code = activePromo.code;
         }
+        const autorenewToggle = document.getElementById('autorenewToggle');
+        const wantAutorenew = !!(autorenewToggle && autorenewToggle.checked);
+        if (wantAutorenew) {
+            if (activePromo) {
+                showToast('Автопродление не сочетается с промокодом: уберите промокод или снимите галочку.', 'warning');
+                return;
+            }
+            payload.autorenew = true;
+        }
 
         const quote = await paymentQuote(payload);
+        if (wantAutorenew) {
+            const days = btn.closest('.tariff-card') ? btn.closest('.tariff-card').dataset.tariffDays : '';
+            if (!quote.autorenew_amount) {
+                showToast('Для этого тарифа автопродление недоступно. Снимите галочку и оплатите разово.', 'warning');
+                return;
+            }
+            if (!confirm('Подключить автопродление?\n\nКаждые ' + days + ' дн. через СБП будет списываться ' +
+                quote.autorenew_amount + ' ₽, пока вы не отключите его. Отключить можно в любой момент ' +
+                'в личном кабинете или по ссылке из письма Platega.')) return;
+        }
         const priorTotal = btn.dataset.quotedAmount;
         if (priorTotal && formatRubAmount(priorTotal) !== formatRubAmount(quote.final_amount)) {
             if (!confirm('Итоговая стоимость обновилась: ' + formatRubAmount(quote.final_amount) + ' ₽. Перейти к оплате?')) return;
@@ -158,6 +177,84 @@ async function initPayment(tariffName, price, btn, allowCancelRetry = true) {
         else showToast(error.message || "Ошибка соединения с сервером.", "error");
     } finally {
         btn.classList.remove('btn-loading');
+    }
+}
+
+// ============================================================
+// Автопродление: статус и отключение
+// ============================================================
+
+function renderAutorenewCard(data) {
+    const card = document.getElementById('autorenewCard');
+    const body = document.getElementById('autorenewBody');
+    if (!card || !body) return;
+    body.textContent = '';
+    const line = (text, cls) => {
+        const el = document.createElement('p');
+        el.className = cls || 'mb-1';
+        el.textContent = text;
+        body.appendChild(el);
+    };
+    const button = (text, handler, cls) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = cls || 'btn btn-brand-outline btn-sm mt-2';
+        el.textContent = text;
+        el.addEventListener('click', handler);
+        body.appendChild(el);
+    };
+    if (!data || !data.status) {
+        card.hidden = true;
+        return;
+    }
+    card.hidden = false;
+    const plan = (data.tariff_name || 'Тариф') + ' · ' + data.amount + ' ₽ каждые ' + (data.period_days || '') + ' дн.';
+    if (data.status === 'active') {
+        line('Включено: ' + plan);
+        line('Следующее списание: ' + (data.next_charge_at || 'уточняется'), 'text-gray mb-1');
+        button('Отключить автопродление', cancelAutorenew);
+    } else if (data.status === 'pending') {
+        line('Ждём привязку счёта в банке: ' + plan);
+        if (data.payment_url) {
+            const link = document.createElement('a');
+            link.className = 'btn btn-brand btn-sm mt-2 me-2';
+            link.href = data.payment_url;
+            link.textContent = 'Привязать счёт';
+            body.appendChild(link);
+        }
+        button('Отменить', cancelAutorenew);
+    } else if (data.status === 'past_due') {
+        line('Автопродление остановлено: банк отклонил списание ' + data.amount + ' ₽. Продлите подписку вручную или подключите автопродление заново.');
+    } else if (data.status === 'failed') {
+        line('Не удалось подключить автопродление. Деньги не списаны, попробуйте ещё раз.');
+    } else {
+        card.hidden = true;
+    }
+}
+
+async function loadAutorenew() {
+    if (!document.getElementById('autorenewCard')) return;
+    try {
+        const response = await fetch('/payment/autorenew');
+        if (response.ok) renderAutorenewCard(await response.json());
+    } catch (error) {
+        console.error('Autorenew status error:', error);
+    }
+}
+
+async function cancelAutorenew() {
+    if (!confirm('Отключить автопродление? Деньги перестанут списываться, оплаченный срок подписки сохранится.')) return;
+    try {
+        const response = await fetch('/payment/autorenew/cancel', { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+            showToast('Автопродление отключено.', 'info');
+            await loadAutorenew();
+        } else {
+            showToast(data.detail || 'Не удалось отключить автопродление.', 'error');
+        }
+    } catch (error) {
+        showToast('Ошибка соединения с сервером.', 'error');
     }
 }
 
@@ -486,4 +583,5 @@ document.addEventListener("DOMContentLoaded", function() {
     initFormLoading();
     initScrollAnimations();
     initSlotSelector();
+    loadAutorenew();
 });
