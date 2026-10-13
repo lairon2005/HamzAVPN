@@ -269,3 +269,29 @@ class RecurringTests(PaymentDatabaseTests):
 
 if __name__ == '__main__':
     unittest.main()
+
+    async def test_traffic_is_in_fixed_recurring_amount_and_every_charge_snapshot(self):
+        from unittest.mock import patch
+        from real_traffic_pricing import real_traffic_pricing, real_traffic_checkout
+        self.recurring._traffic=SimpleNamespace(settings=AsyncMock(return_value=real_traffic_pricing().TrafficSettings()))
+        with patch.dict(sys.modules,{'tgbot.services.traffic_checkout':real_traffic_checkout()}):
+            sub,_=await self.recurring.start(42,5,1,packs=2)
+        self.assertEqual(sub.extra_traffic_gb,200)
+        self.assertEqual(sub.amount,399+147+294)
+        await self.recurring.on_charge_confirmed(sub,CHARGE1,sub.amount,'RUB',None)
+        await self.recurring.on_charge_confirmed(sub,CHARGE1,sub.amount,'RUB',None)
+        self.assertEqual((await self.user()).extra_traffic_gb,200)
+        payment=await self.payment(CHARGE1)
+        self.assertEqual((payment.source,payment.extra_traffic_gb),('auto',200))
+
+    async def test_changed_traffic_cancels_obsolete_agreement_and_failure_is_propagated(self):
+        await self.recurring.start(42,5,0)
+        user=await self.user()
+        user.extra_traffic_gb=100
+        self.platega.cancel_subscription.side_effect=PlategaError('retry')
+        with self.assertRaises(PlategaError):
+            await self.recurring.cancel_if_composition_changed(user)
+        self.assertEqual((await self.sub()).status,'pending')
+        self.platega.cancel_subscription.side_effect=None
+        await self.recurring.cancel_if_composition_changed(user)
+        self.assertEqual((await self.sub()).status,'cancelled')

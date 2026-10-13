@@ -1,0 +1,17 @@
+{% if traffic_quote and traffic_quote.ok %}
+<section class="section-card mt-3 mb-3" id="buyTrafficBox"
+         data-traffic-available="{{ traffic_quote.available }}" data-traffic-pack-gb="{{ traffic_quote.pack_gb }}">
+    <h5 class="fw-bold">Докупить трафик</h5>
+    <p class="small text-gray">Сейчас {{ traffic_quote.current_limit_gb }} ГБ/мес.
+        +{{ traffic_quote.pack_gb }} ГБ до {{ traffic_quote.valid_until.strftime('%d.%m.%Y') }}
+        за {{ traffic_quote.price_per_pack }} ₽ за пакет.
+        При продлении — {{ traffic_settings.pack_price }} ₽/мес за пакет.</p>
+    <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-brand-outline" data-buy-traffic="-1" aria-label="Уменьшить трафик">−</button>
+        <span id="buyTrafficGb">+{{ traffic_quote.pack_gb }} ГБ</span>
+        <button type="button" class="btn btn-sm btn-brand-outline" data-buy-traffic="1" aria-label="Увеличить трафик">+</button>
+    </div>
+    <button type="button" class="btn btn-brand mt-2" id="buyTrafficBtn" disabled>Рассчитываем цену…</button>
+    <p class="small mb-0 mt-2" id="trafficPurchaseNotice" role="status"></p>
+</section>
+{% endif %}

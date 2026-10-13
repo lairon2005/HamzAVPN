@@ -16,6 +16,7 @@ from .cancel import cancel_router
 from .promocodes import admin_promo_router
 from .channels import admin_channels_router
 from .device_settings import admin_device_settings_router
+from .traffic_settings import admin_traffic_settings_router
 
 # Создаем один большой "агрегирующий" роутер для всей админки
 admin_router = Router(name="admin")
@@ -37,6 +38,7 @@ admin_router.include_routers(
     admin_promo_router,
     admin_channels_router,
     admin_device_settings_router,
+    admin_traffic_settings_router,
 )
 
 # Экспортируем только один, уже собранный и настроенный admin_router

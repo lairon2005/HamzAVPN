@@ -116,3 +116,17 @@ class CallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, 409)
         self.repo.bind_transaction.assert_not_awaited()
         self.service.process_successful_payment.assert_not_awaited()
+
+    async def test_traffic_callback_notifies_traffic_without_subscription_branch(self):
+        self.payment.kind = 'traffic'
+        self.payment.extra_traffic_gb = 100
+        self.service.process_successful_payment.return_value = SimpleNamespace(
+            kind='traffic', payment=self.payment, extra_traffic_gb=100)
+        self.module._notify_traffic_purchased = AsyncMock()
+        self.module._log_traffic_purchase = AsyncMock()
+        self.module._drop_autorenew_after_slots = AsyncMock()
+        self.module._notify_tg_user = AsyncMock()
+        response = await self.module.platega_webhook_handler(self.request())
+        self.assertEqual(response.status, 200)
+        self.module._notify_traffic_purchased.assert_awaited_once()
+        self.module._notify_tg_user.assert_not_awaited()

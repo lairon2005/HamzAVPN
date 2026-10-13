@@ -1,3 +1,4 @@
+from real_traffic_pricing import real_traffic_pricing, real_traffic_checkout
 import importlib.util
 import sys
 import types
@@ -162,6 +163,7 @@ def load_payment_handlers_module():
     device_pricing_module = _real_device_pricing()
     device_slot_service.settings.return_value = device_pricing_module.DeviceSettings()
     tgbot_services_module.device_slot_service = device_slot_service
+    tgbot_services_module.traffic_service = SimpleNamespace(settings=AsyncMock(return_value=real_traffic_pricing().TrafficSettings()))
 
     promo_code_service_module = types.ModuleType("tgbot.services.promo_code_service")
     promo_code_service_module.PromoClaimError = type("PromoClaimError", (Exception,), {})
@@ -216,7 +218,9 @@ def load_payment_handlers_module():
         "tgbot.services": tgbot_services_module,
         "tgbot.services.promo_code_service": promo_code_service_module,
         "tgbot.services.pricing": tgbot_services_pricing_module,
-        "tgbot.services.device_pricing": device_pricing_module,
+        "tgbot.services.traffic_pricing": real_traffic_pricing(),
+            "tgbot.services.traffic_checkout": real_traffic_checkout(),
+            "tgbot.services.device_pricing": device_pricing_module,
         "tgbot.services.payment": tgbot_services_payment_module,
         "tgbot.handlers": tgbot_handlers_module,
         "tgbot.handlers.user": tgbot_handlers_user_module,

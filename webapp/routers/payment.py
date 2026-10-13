@@ -8,12 +8,14 @@ from pydantic import BaseModel
 
 from tgbot.services import (
     payment_service, promo_service, subscription_service, device_slot_service,
-    recurring_service,
+    recurring_service, traffic_service,
 )
 from tgbot.services.recurring_service import RecurringError
 from platega.client import PlategaError
 from tgbot.services.pricing import effective_price
 from tgbot.services.device_pricing import build_checkout
+from tgbot.services.traffic_checkout import add_traffic
+from tgbot.services.traffic_pricing import gb_to_packs
 from tgbot.services.promo_code_service import PromoClaimError
 from db import User
 from tgbot.services.payment_service import PendingPaymentError
@@ -38,6 +40,7 @@ class PaymentRequest(BaseModel):
     # Сколько доп. устройств оплачивается вместе с тарифом. Скидка на них не
     # распространяется — см. build_checkout.
     extra_devices: int = 0
+    extra_traffic_packs: int | None = None
     # Подключить автопродление (рекуррентная СБП-подписка Platega). Без промокода:
     # сумма подписки фиксирована.
     autorenew: bool = False
@@ -61,22 +64,27 @@ async def _prepare_checkout(payload: PaymentRequest, user):
     settings = await device_slot_service.settings()
     slots = max(0, min(settings.max_extra, payload.extra_devices))
     checkout = build_checkout(settings, original_price, tariff.duration_days, slots, discount)
+    packs = payload.extra_traffic_packs
+    if packs is None:
+        packs = gb_to_packs(await traffic_service.settings(), getattr(user, 'extra_traffic_gb', 0) or 0)
+    checkout = await add_traffic(checkout, tariff, packs, traffic_service)
     return tariff, checkout, validated_promo, discount, slots
 
 
 def _quote_response(checkout, discount, autorenew_amount=None):
     return {'final_amount': checkout.total, 'original_amount': checkout.original_total,
             'tariff_amount': checkout.tariff_final, 'slots_amount': checkout.slots_cost,
-            'applied_discount': discount, 'currency': 'RUB', 'extra_devices': checkout.slots,
+            'traffic_amount': checkout.traffic_cost, 'extra_traffic_gb': checkout.traffic_gb,
+            'extra_traffic_packs': checkout.traffic_packs, 'applied_discount': discount, 'currency': 'RUB', 'extra_devices': checkout.slots,
             # Сумма регулярного списания, если для этого тарифа доступно автопродление.
             'autorenew_amount': autorenew_amount}
 
 
-async def _autorenew_amount(user, tariff, slots, discount):
+async def _autorenew_amount(user, tariff, slots, discount, packs=0):
     if discount or not recurring_service.is_available():
         return None
     try:
-        return (await recurring_service.build_offer(user, tariff, slots)).amount
+        return (await recurring_service.build_offer(user, tariff, slots, packs=packs)).amount
     except RecurringError:
         return None
 
@@ -86,7 +94,7 @@ async def quote_payment_route(payload: PaymentRequest, user: User = Depends(get_
     if not user:
         raise HTTPException(status_code=401, detail='Unauthorized')
     tariff, checkout, _, discount, slots = await _prepare_checkout(payload, user)
-    return _quote_response(checkout, discount, await _autorenew_amount(user, tariff, slots, discount))
+    return _quote_response(checkout, discount, await _autorenew_amount(user, tariff, slots, discount, checkout.traffic_packs))
 
 
 @router.post("/create")
@@ -112,7 +120,7 @@ async def create_payment_route(payload: PaymentRequest, user: User = Depends(get
             original_amount=checkout.original_total, final_amount=checkout.total,
             description=f'Подписка HamzAVPN: {tariff.name}', return_url=return_url,
             source=payload.source, promo_code=validated_promo.code if validated_promo else None,
-            discount_percent=discount, extra_devices=slots,
+            discount_percent=discount, extra_devices=slots, extra_traffic_gb=checkout.traffic_gb,
             metadata={'tariffId': str(tariff.id), 'source': payload.source, 'slots': str(slots)},
         )
         return {'payment_url': payment_url, **_quote_response(checkout, discount)}
@@ -134,7 +142,7 @@ async def _create_autorenew(payload, user, tariff, checkout, validated_promo, sl
     if validated_promo:
         raise HTTPException(status_code=400, detail='Автопродление нельзя совмещать с промокодом')
     try:
-        sub, url = await recurring_service.start(user.user_id, tariff.id, slots, source=payload.source)
+        sub, url = await recurring_service.start(user.user_id, tariff.id, slots, source=payload.source, packs=checkout.traffic_packs)
     except RecurringError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except PendingPaymentError:
@@ -150,6 +158,7 @@ def _autorenew_view(sub, tariff):
     if sub is None:
         return {'status': None}
     return {
+        'extra_traffic_gb': getattr(sub, 'extra_traffic_gb', 0),
         'status': sub.status, 'amount': sub.amount, 'extra_devices': sub.extra_devices,
         'tariff_name': tariff.name if tariff else None,
         'period_days': tariff.duration_days if tariff else None,
@@ -319,3 +328,76 @@ async def cancel_pending_payment_route(user: User = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Неоплаченный счёт не найден.")
 
     return {"cancelled": True}
+
+
+class TrafficRequest(BaseModel):
+    """Докупка доп. трафика в середине оплаченного периода."""
+    packs: int = 1
+    source: Literal["web", "tma"] = "web"
+
+
+@router.post("/traffic/quote")
+async def quote_traffic_payment(payload: TrafficRequest, user: User = Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    quote = await traffic_service.quote(user.user_id, payload.packs)
+    if not quote.ok:
+        raise HTTPException(status_code=400, detail=quote.error)
+    return {'final_amount': quote.price, 'currency': 'RUB', 'extra_traffic_gb': quote.added_gb,
+            'total_limit_gb': quote.total_limit_gb}
+
+
+@router.post("/traffic")
+async def create_traffic_payment(
+    payload: TrafficRequest,
+    user: User = Depends(get_current_user),
+):
+    """
+    Создаёт счёт на докупку пакетов трафика.
+
+    Цену считает сервер (остаток дней подписки × цена пакета) — клиент присылает
+    только количество. Платёж создаётся с kind='traffic': вебхук по нему поднимет
+    лимит трафика и НЕ тронет срок подписки.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if await payment_service.has_pending_payment(user.user_id):
+        raise HTTPException(
+            status_code=409,
+            detail="У вас уже есть неоплаченный счёт. Завершите или дождитесь его отмены."
+        )
+
+    quote = await traffic_service.quote(user.user_id, payload.packs)
+    if not quote.ok:
+        raise HTTPException(status_code=400, detail=quote.error)
+
+    if payload.source == "tma" and config.tg_bot.tg_bot_username:
+        return_url = f"https://t.me/{config.tg_bot.tg_bot_username}/{config.tg_bot.tma_app_name}?startapp=home"
+    else:
+        return_url = f"https://{config.webhook.domain}/profile/"
+
+    description = f"Дополнительный трафик (+{quote.added_gb} ГБ, {quote.remaining_days} дн.)"
+
+    try:
+        payment_url, provider_payment_id = await payment_service.create_checkout(
+            user_id=user.user_id, tariff_id=None, original_amount=quote.price, final_amount=quote.price,
+            description=description, return_url=return_url, source=payload.source,
+            kind='traffic', extra_traffic_gb=quote.added_gb,
+            metadata={"kind": "traffic", "gb": str(quote.added_gb), "source": payload.source},
+        )
+
+        logger.info(
+            f"Traffic payment created: user={user.user_id}, packs={quote.packs}, "
+            f"amount={quote.price}, days_left={quote.remaining_days}, source={payload.source}"
+        )
+
+        return {"payment_url": payment_url, "final_amount": quote.price, "currency": "RUB"}
+
+    except PendingPaymentError:
+        raise HTTPException(status_code=409, detail='У вас уже есть неоплаченный счет')
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating traffic payment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ошибка платежного шлюза")

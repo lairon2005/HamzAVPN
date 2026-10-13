@@ -15,12 +15,12 @@ class RecurringRepository:
 
     async def create(self, platega_subscription_id: str, user_id: int, tariff_id: int,
                      extra_devices: int, amount: int, payment_url: str | None = None,
-                     source: str = 'bot') -> RecurringSubscription:
+                     source: str = 'bot', extra_traffic_gb: int = 0) -> RecurringSubscription:
         async with self._session_maker() as session:
             sub = RecurringSubscription(
                 platega_subscription_id=platega_subscription_id, user_id=user_id,
                 tariff_id=tariff_id, extra_devices=extra_devices, amount=amount,
-                payment_url=payment_url, source=source,
+                payment_url=payment_url, source=source, extra_traffic_gb=extra_traffic_gb,
             )
             session.add(sub)
             try:

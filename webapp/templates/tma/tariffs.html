@@ -37,6 +37,7 @@
         </p>
     </div>
 
+    {% include "_traffic_selector.html" %}
     <label class="section-card animate-in mt-3 d-flex align-items-start gap-2" for="autorenewToggle" style="cursor:pointer">
         <input type="checkbox" class="form-check-input mt-1" id="autorenewToggle">
         <span>
@@ -69,7 +70,7 @@
                         <div class="tariff-radio"></div>
                     </div>
                 </div>
-                {% if tariff.price_stars and not current_extra_devices %}
+                {% if tariff.price_stars and not current_extra_devices and not current_traffic_packs %}
                 <button type="button" class="btn-brand-outline w-100 mt-2 tma-stars-btn"
                         data-tariff-id="{{ tariff.id }}" data-price-stars="{{ tariff.price_stars }}">
                     ⭐ {{ tariff.price_stars }}

@@ -14,11 +14,12 @@ from tgbot.services import (
     subscription_service,
     payment_service,
     device_service,
-    device_slot_service,
+    device_slot_service, traffic_service,
     key_service,
 )
 from tgbot.services.key_service import CODE_OK, REVOKE_NOTICES
 from tgbot.services.pricing import effective_price
+from tgbot.services.traffic_pricing import gb_to_packs
 
 router = APIRouter(prefix="/profile")
 templates = Jinja2Templates(directory="webapp/templates")
@@ -78,7 +79,7 @@ async def dashboard_page(
                 )
 
                 vpn_user_data = {
-                    "status": "active" if is_active else "disabled",
+                    "status": "active" if is_active else ("limited" if str(rw_user.get("status", "")).upper() == "LIMITED" else "disabled"),
                     "expire": expire_ts,
                     "used_traffic": used_traffic,
                     "data_limit": rw_user.get("trafficLimitBytes", 0),
@@ -128,7 +129,10 @@ async def dashboard_page(
         "payments": payments_list,
         "devices": devices,
         "slot_quote": slot_quote,
+        "traffic_quote": await traffic_service.quote(user.user_id),
         "device_settings": device_settings,
+        "traffic_settings": await traffic_service.settings(),
+        "current_traffic_packs": gb_to_packs(await traffic_service.settings(), user.extra_traffic_gb or 0),
         "title": "Личный кабинет"
     })
 

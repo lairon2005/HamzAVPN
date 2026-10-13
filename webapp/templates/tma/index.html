@@ -14,11 +14,13 @@
             </span>
         {% else %}
             <span class="status-badge status-badge-expired">
-                <span class="pulse-dot pulse-dot-red"></span> Истёк
+                <span class="pulse-dot pulse-dot-red"></span> {{ "Квота исчерпана" if vpn_data.status == "limited" else "Истёк" }}
             </span>
         {% endif %}
     {% endif %}
 </div>
+
+{% include "_traffic_purchase.html" %}
 
 {% if user.vpn_username and vpn_data %}
 
@@ -31,12 +33,12 @@
     </div>
     {% else %}
     <div class="section-card animate-in" style="border-left: 3px solid var(--danger);">
-        <h5 class="fw-bold mb-1"><i class="fas fa-exclamation-circle text-danger-custom me-2"></i>Подписка истекла</h5>
+        <h5 class="fw-bold mb-1"><i class="fas fa-exclamation-circle text-danger-custom me-2"></i>{{ "Квота трафика исчерпана" if vpn_data.status == "limited" else "Подписка истекла" }}</h5>
         <p class="text-gray small mb-0">
             Дата окончания: <span class="text-danger-custom fw-bold">{{ expire_display or '—' }}</span>
         </p>
         <div class="alert-custom alert-warning-custom mt-3 text-start mb-0">
-            <i class="fas fa-info-circle me-1"></i> Доступ приостановлен. Пополните подписку.
+            <i class="fas fa-info-circle me-1"></i> {{ "Докупите трафик или дождитесь обновления месячной квоты." if vpn_data.status == "limited" else "Доступ приостановлен. Пополните подписку." }}
         </div>
     </div>
     {% endif %}

@@ -54,7 +54,7 @@ class AutorenewWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['payment_url'], SUB_URL)
         self.assertTrue(result['autorenew'])
         self.assertEqual(result['final_amount'], 399)
-        self.module.recurring_service.start.assert_awaited_once_with(42, 5, 2, source='web')
+        self.module.recurring_service.start.assert_awaited_once_with(42, 5, 2, source='web', packs=0)
         self.module.payment_service.create_checkout.assert_not_awaited()
 
     async def test_autorenew_with_promo_is_refused_and_promo_is_not_claimed(self):

@@ -70,6 +70,8 @@ class User(Base):
     # лимит навсегда отвязывается от глобального fallbackDeviceLimit.
     extra_devices: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
 
+    extra_traffic_gb: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+
 class Tariff(Base):
     __tablename__ = 'tariffs'
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -150,6 +152,7 @@ class Payment(Base):
     # это подтверждение уже имеющихся слотов на новый срок, для kind='devices' —
     # сколько слотов добавить к User.extra_devices.
     extra_devices: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    extra_traffic_gb: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now)
     completed_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
 
@@ -185,6 +188,7 @@ class RecurringSubscription(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.user_id'), index=True)
     tariff_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('tariffs.id'))
     extra_devices: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    extra_traffic_gb: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     amount: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3), default='RUB', server_default='RUB', nullable=False)
     status: Mapped[str] = mapped_column(String(16), default='pending', server_default='pending', nullable=False)

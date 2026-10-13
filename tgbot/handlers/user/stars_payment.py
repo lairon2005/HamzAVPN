@@ -70,11 +70,11 @@ async def stars_pre_checkout(query: PreCheckoutQuery):
     # Пропустить такую оплату — значит продлить подписку, а вместе с ней и
     # слоты, за которые в этом периоде никто не заплатил.
     user = await user_repo.get(payload_user_id)
-    if user and (user.extra_devices or 0):
+    if user and ((user.extra_devices or 0) or (getattr(user, "extra_traffic_gb", 0) or 0)):
         await query.answer(
             ok=False,
             error_message=(
-                "У вас подключены дополнительные устройства — такая подписка "
+                "У вас подключены дополнительные устройства или трафик — такая подписка "
                 "продлевается только картой или через СБП."
             ),
         )

@@ -13,12 +13,14 @@ from loader import logger, config
 from database import tariff_repo, user_repo
 from remnawave.client import RemnawaveClient
 from tgbot.services import (
-    promo_service, subscription_service, payment_service, device_slot_service,
+    promo_service, subscription_service, payment_service, device_slot_service, traffic_service,
 )
 from tgbot.services.promo_code_service import PromoClaimError
 from tgbot.promo import get_promo_reward
 from tgbot.services.pricing import effective_price, format_quota
 from tgbot.services.device_pricing import build_checkout, receipt_items
+from tgbot.services.traffic_checkout import add_traffic
+from tgbot.services.traffic_pricing import gb_to_packs
 from tgbot.handlers.user.profile import show_profile_logic
 from tgbot.keyboards.inline import (
     cancel_fsm_keyboard,
@@ -262,12 +264,15 @@ async def _show_pending_invoice(call: CallbackQuery, pending) -> None:
     """Показывает пользователю уже существующий неоплаченный счёт."""
     # Счёт на докупку устройств выписывается без тарифа (kind='devices') —
     # дёргать tariff_repo с None нельзя, да и показывать нечего.
-    is_devices_invoice = getattr(pending, 'kind', 'subscription') == 'devices'
+    is_devices_invoice = getattr(pending, 'kind', 'subscription') in ('devices', 'traffic')
     pending_tariff = None
     if pending.tariff_id:
         pending_tariff = await tariff_repo.get_by_id(pending.tariff_id)
 
-    if is_devices_invoice:
+    if getattr(pending, 'kind', '') == 'traffic':
+        tariff_name = f'Доп. трафик (+{pending.extra_traffic_gb} ГБ)'
+        tariff_days = '—'
+    elif is_devices_invoice:
         tariff_name = f"Доп. устройства ({pending.extra_devices} шт.)"
         tariff_days = "—"
     else:
@@ -316,7 +321,7 @@ async def _create_and_send_payment(
     state: FSMContext,
     bot: Bot,
     tariff,
-    slots: int = 0,
+    slots: int = 0, packs: int = 0,
 ) -> None:
     """Создаёт платёж в Platega, сохраняет его в БД и отправляет ссылку на оплату.
 
@@ -337,7 +342,13 @@ async def _create_and_send_payment(
     checkout = build_checkout(
         device_settings, original_price, tariff.duration_days, slots, discount_percent or 0
     )
+    checkout = await add_traffic(checkout, tariff, packs, traffic_service)
+    traffic_settings = await traffic_service.settings()
     price_text = _checkout_price_text(checkout, discount_percent, promo_code)
+    if checkout.has_traffic:
+        price_text += f"\n+ Трафик: {checkout.traffic_gb} ГБ/мес — {checkout.traffic_cost:.2f} ₽"
+        if not checkout.has_slots:
+            price_text += f"\nИтого: <b>{checkout.total:.2f} ₽</b>"
     if checkout.has_slots:
         price_text += (
             f"\n+ {checkout.slots} доп. "
@@ -354,7 +365,7 @@ async def _create_and_send_payment(
             description=f"Подписка HamzAVPN: {tariff.name}",
             return_url=f"https://t.me/{(await bot.get_me()).username}",
             source='bot', promo_code=promo_code, discount_percent=discount_percent or 0,
-            extra_devices=slots, metadata={'tariffId': str(tariff.id), 'slots': str(slots)},
+            extra_devices=slots, extra_traffic_gb=checkout.traffic_gb, metadata={'tariffId': str(tariff.id), 'slots': str(slots)},
         )
     except Exception as e:
         logger.error(
@@ -367,7 +378,9 @@ async def _create_and_send_payment(
             "Документы доступны кнопкой ниже.",
             reply_markup=tariff_slots_keyboard(
                 tariff.id, slots, device_settings.max_extra, device_settings.base_limit,
-                total_amount=checkout.total,
+                total_amount=checkout.total, packs=checkout.traffic_packs,
+                max_packs=traffic_settings.max_packs if tariff.data_limit_gb else 0,
+                pack_gb=traffic_settings.pack_gb,
             ),
         )
         return
@@ -401,7 +414,7 @@ async def _create_and_send_payment(
     await state.update_data(payment_message_id=sent_message.message_id)
 
 
-async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots: int) -> None:
+async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots: int, packs: int = 0) -> None:
     """Шаг чекаута «сколько устройств»: сумма тарифа + слотов и степпер."""
     user_id = call.from_user.id
     fsm_data = await state.get_data()
@@ -416,7 +429,13 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
     checkout = build_checkout(
         device_settings, original_price, tariff.duration_days, slots, discount_percent or 0
     )
+    checkout = await add_traffic(checkout, tariff, packs, traffic_service)
+    traffic_settings = await traffic_service.settings()
     price_text = _checkout_price_text(checkout, discount_percent, promo_code)
+    if checkout.has_traffic:
+        price_text += f"\n+ Трафик: {checkout.traffic_gb} ГБ/мес — {checkout.traffic_cost:.2f} ₽"
+        if not checkout.has_slots:
+            price_text += f"\nИтого: <b>{checkout.total:.2f} ₽</b>"
 
     devices_line = f"Устройств: <b>{device_settings.base_limit}</b> (входит в тариф)"
     total_line = ""
@@ -438,7 +457,7 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
             from tgbot.services import recurring_service
             from tgbot.services.recurring_service import RecurringError
             if recurring_service.is_available():
-                offer = await recurring_service.build_offer(await user_repo.get(user_id), tariff, slots)
+                offer = await recurring_service.build_offer(await user_repo.get(user_id), tariff, slots, packs=checkout.traffic_packs)
                 autorenew_amount = offer.amount
         except Exception as exc:
             # RecurringError — тариф не годится для подписки; остальное не должно ломать оплату.
@@ -456,7 +475,9 @@ async def _show_slots_step(call: CallbackQuery, state: FSMContext, tariff, slots
         f"<i>Трафик общий на аккаунт и от количества устройств не меняется.</i>",
         reply_markup=tariff_slots_keyboard(
             tariff.id, slots, device_settings.max_extra, device_settings.base_limit,
-            total_amount=checkout.total, autorenew_amount=autorenew_amount,
+            total_amount=checkout.total, packs=checkout.traffic_packs,
+            max_packs=traffic_settings.max_packs if tariff.data_limit_gb else 0,
+            pack_gb=traffic_settings.pack_gb, autorenew_amount=autorenew_amount,
         ),
     )
 
@@ -482,9 +503,11 @@ async def select_tariff_handler(call: CallbackQuery, state: FSMContext, bot: Bot
     # Дефолт — то, за сколько слотов человек уже платит: при продлении они
     # должны сохраниться сами, без лишних нажатий.
     user = await user_repo.get(user_id)
-    await _show_slots_step(call, state, tariff, (user.extra_devices or 0) if user else 0)
+    await _show_slots_step(call, state, tariff, (user.extra_devices or 0) if user else 0,
+                           gb_to_packs(await traffic_service.settings(), (user.extra_traffic_gb or 0) if user else 0))
 
 
+@payment_router.callback_query(F.data.startswith("tpacks_"))
 @payment_router.callback_query(F.data.startswith("tslots_"))
 async def change_tariff_slots_handler(call: CallbackQuery, state: FSMContext):
     """Степпер количества доп. устройств на чекауте."""
@@ -493,6 +516,7 @@ async def change_tariff_slots_handler(call: CallbackQuery, state: FSMContext):
     parts = call.data.split("_")  # ['tslots', '<tariff_id>', '<slots>']
     try:
         tariff_id, slots = int(parts[1]), int(parts[2])
+        packs = int(parts[3]) if len(parts) > 3 else 0
     except (IndexError, ValueError):
         return
 
@@ -501,7 +525,7 @@ async def change_tariff_slots_handler(call: CallbackQuery, state: FSMContext):
         await call.message.edit_text("Ошибка! Тариф не найден.", reply_markup=back_to_main_menu_keyboard())
         return
 
-    await _show_slots_step(call, state, tariff, slots)
+    await _show_slots_step(call, state, tariff, slots, packs)
 
 
 @payment_router.callback_query(F.data.startswith("tpay_"))
@@ -513,6 +537,7 @@ async def tariff_to_payment_handler(call: CallbackQuery, state: FSMContext, bot:
     parts = call.data.split("_")  # ['tpay', '<tariff_id>', '<slots>']
     try:
         tariff_id, slots = int(parts[1]), int(parts[2])
+        packs = int(parts[3]) if len(parts) > 3 else 0
     except (IndexError, ValueError):
         return
 
@@ -526,7 +551,8 @@ async def tariff_to_payment_handler(call: CallbackQuery, state: FSMContext, bot:
         await _show_pending_invoice(call, pending)
         return
 
-    await _create_and_send_payment(call, state, bot, tariff, slots=slots)
+    await _create_and_send_payment(call, state, bot, tariff, slots=slots,
+                                   packs=packs)
 
 
 @payment_router.callback_query(F.data.startswith("paymethod_"))

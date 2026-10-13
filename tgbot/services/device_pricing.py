@@ -19,7 +19,7 @@
 Настройки (цена, база, потолок) лежат в app_settings и правятся из админки,
 дефолты ниже — то, что было зашито в панели на момент запуска фичи.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from math import ceil
 
@@ -110,18 +110,31 @@ class Checkout:
     slots: int
     slots_cost: float
     months: int
+    # Докупленный трафик (пакеты ГБ, см. traffic_pricing). Скидка промокода на
+    # него, как и на слоты, не действует.
+    traffic_packs: int = 0
+    traffic_cost: float = 0.0
+    traffic_gb: int = 0
 
     @property
     def total(self) -> float:
-        return round(self.tariff_final + self.slots_cost, 2)
+        return round(self.tariff_final + self.slots_cost + self.traffic_cost, 2)
 
     @property
     def original_total(self) -> float:
-        return round(self.tariff_original + self.slots_cost, 2)
+        return round(self.tariff_original + self.slots_cost + self.traffic_cost, 2)
 
     @property
     def has_slots(self) -> bool:
         return self.slots > 0 and self.slots_cost > 0
+
+    @property
+    def has_traffic(self) -> bool:
+        return self.traffic_packs > 0 and self.traffic_cost > 0
+
+    def with_traffic(self, packs: int, cost: float, gb: int) -> "Checkout":
+        """Тот же чекаут с добавленными пакетами трафика."""
+        return replace(self, traffic_packs=max(0, packs), traffic_cost=cost, traffic_gb=gb)
 
 
 def build_checkout(settings: DeviceSettings, tariff_price: float, duration_days: int,
@@ -159,6 +172,12 @@ def receipt_items(tariff_name: str, checkout: Checkout, duration_days: int) -> l
             "description": f"Дополнительные устройства ({duration_days} дн.)",
             "quantity": checkout.slots,
             "amount": checkout.slots_cost / checkout.slots,
+        })
+    if checkout.has_traffic:
+        items.append({
+            "description": f"Дополнительный трафик ({duration_days} дн.)",
+            "quantity": checkout.traffic_packs,
+            "amount": checkout.traffic_cost / checkout.traffic_packs,
         })
     return items
 

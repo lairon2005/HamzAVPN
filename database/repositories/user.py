@@ -309,3 +309,32 @@ class UserRepository:
             )
             await session.execute(stmt)
             await session.commit()
+
+    async def set_traffic_quota(self, user_id: int, quota_gb: int) -> None:
+        """Записывает квоту подписки (ГБ/мес, 0 = безлимит)."""
+        async with self._session_maker() as session:
+            stmt = update(User).where(User.user_id == user_id, User.subscription_data_limit_gb.is_(None)).values(subscription_data_limit_gb=max(0, quota_gb))
+            await session.execute(stmt)
+            await session.commit()
+
+    async def get_with_extra_traffic(self) -> list[User]:
+        """Все, у кого есть докупленный трафик — для джоба сверки лимитов."""
+        async with self._session_maker() as session:
+            stmt = select(User).where(User.extra_traffic_gb > 0)
+            result = await session.execute(stmt)
+            return result.scalars().all()
+
+    async def get_active_telegram_subscribers(self) -> list[User]:
+        """Telegram-пользователи с живой подпиской и VPN-аккаунтом — адресаты
+        предупреждений об исчерпании трафика."""
+        async with self._session_maker() as session:
+            stmt = select(User).where(
+                User.user_id > 0,
+                User.is_first_payment_made.is_(True),
+                User.is_active == True,
+                User.vpn_username.is_not(None),
+                User.subscription_end_date.is_not(None),
+                User.subscription_end_date > datetime.now(),
+            )
+            result = await session.execute(stmt)
+            return result.scalars().all()

@@ -49,7 +49,7 @@ class AutoRenewOffer:
 
 class RecurringService:
     def __init__(self, recurring_repo, payment_repo, payment_service, tariff_repo,
-                 user_repo, device_slot_service, platega=None, enabled: bool = True):
+                 user_repo, device_slot_service, platega=None, enabled: bool = True, traffic_service=None):
         self._platega_client = platega
         self._enabled = enabled
         self._repo = recurring_repo
@@ -58,6 +58,7 @@ class RecurringService:
         self._tariffs = tariff_repo
         self._users = user_repo
         self._slots = device_slot_service
+        self._traffic = traffic_service
 
     @property
     def _platega(self):
@@ -72,7 +73,7 @@ class RecurringService:
 
     # ------------------------------------------------------------------ оформление
 
-    async def build_offer(self, user, tariff, slots: int) -> AutoRenewOffer:
+    async def build_offer(self, user, tariff, slots: int, packs: int = 0) -> AutoRenewOffer:
         """Сумма и период подписки для тарифа и числа слотов либо RecurringError."""
         if tariff is None or not tariff.is_active:
             raise RecurringError('Тариф не найден')
@@ -83,6 +84,9 @@ class RecurringService:
         slots = max(0, min(settings.max_extra, slots))
         active = bool(user and user.subscription_end_date and user.subscription_end_date > datetime.now())
         checkout = build_checkout(settings, effective_price(tariff, active), tariff.duration_days, slots, 0)
+        if self._traffic:
+            from tgbot.services.traffic_checkout import add_traffic
+            checkout = await add_traffic(checkout, tariff, packs, self._traffic)
         try:
             amount = whole_rubles(checkout.total)
         except ValueError:
@@ -91,7 +95,7 @@ class RecurringService:
                 'Оплатите этот тариф разово.') from None
         return AutoRenewOffer(amount, interval[0], interval[1], checkout)
 
-    async def start(self, user_id: int, tariff_id: int, slots: int, source: str = 'bot'):
+    async def start(self, user_id: int, tariff_id: int, slots: int, source: str = 'bot', packs: int = 0):
         """Создаёт подписку в Platega и локальную запись. Возвращает (подписка, ссылка).
 
         Живая подписка в статусе pending (человек не дошёл до привязки) заменяется новой:
@@ -101,7 +105,7 @@ class RecurringService:
             raise RecurringError('Автопродление пока недоступно. Оплатите тариф разово.')
         user = await self._users.get(user_id)
         tariff = await self._tariffs.get_by_id(tariff_id)
-        offer = await self.build_offer(user, tariff, slots)
+        offer = await self.build_offer(user, tariff, slots, packs=packs)
         async with self._payment_repo.checkout_lock(user_id):
             if await self._payments.has_pending_payment(user_id):
                 raise PendingPaymentError('У вас уже есть неоплаченный счет')
@@ -120,7 +124,8 @@ class RecurringService:
                 offer.interval, offer.interval_count)
             slots = offer.checkout.slots
             sub = await self._repo.create(
-                created.id, user_id, tariff.id, slots, offer.amount, created.url, source)
+                created.id, user_id, tariff.id, slots, offer.amount, created.url, source,
+                extra_traffic_gb=offer.checkout.traffic_gb)
         logger.info('Автопродление: подписка %s, user=%s, tariff=%s, slots=%s, amount=%s',
                     created.id, user_id, tariff.id, slots, offer.amount)
         return sub, created.url
@@ -137,6 +142,13 @@ class RecurringService:
         await self._platega.cancel_subscription(live.platega_subscription_id)
         await self._repo.set_status(live.platega_subscription_id, 'cancelled')
         return live
+
+    async def cancel_if_composition_changed(self, user):
+        live = await self._repo.get_live_for_user(user.user_id)
+        if live and (live.extra_devices != (user.extra_devices or 0)
+                or live.extra_traffic_gb != (user.extra_traffic_gb or 0)):
+            return await self.cancel(user.user_id)
+        return None
 
     async def on_devices_changed(self, user_id: int):
         """Слоты изменились посреди периода — подписка с прежней суммой больше не годится."""
@@ -184,6 +196,7 @@ class RecurringService:
             provider_payment_id=charge_id, user_id=sub.user_id, tariff_id=sub.tariff_id,
             original_amount=float(sub.amount), final_amount=float(sub.amount), source='auto',
             kind='subscription', extra_devices=sub.extra_devices,
+            extra_traffic_gb=getattr(sub, 'extra_traffic_gb', 0),
         )
         result = await self._payments.process_successful_payment(charge_id, sub.amount, sub.currency)
         await self._repo.record_charge(sub.platega_subscription_id, next_charge_at) \

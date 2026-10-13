@@ -134,6 +134,7 @@ def profile_keyboard(subscription_url: str, show_referral_cta: bool = False) -> 
     builder.button(text="🔗 Открыть страницу подписки", url=subscription_url)
     builder.button(text="🔄 Обновить", callback_data="my_profile")
     builder.button(text="📱 Мои устройства", callback_data="my_devices")
+    builder.button(text="📊 Докупить трафик", callback_data="buy_traffic")
     builder.button(text="🔁 Автопродление", callback_data="autorenew")
     if show_referral_cta:
         builder.button(text="🎁 Поделиться и получить дни", callback_data="referral_program")
@@ -234,7 +235,8 @@ def payment_method_choice_keyboard(tariff_id: int, slots: int = 0,
 
 def tariff_slots_keyboard(tariff_id: int, slots: int, max_slots: int,
                           base_limit: int, *, total_amount: float,
-                          autorenew_amount: int | None = None) -> InlineKeyboardMarkup:
+                          autorenew_amount: int | None = None, packs: int = 0,
+                          max_packs: int = 0, pack_gb: int = 0) -> InlineKeyboardMarkup:
     """
     Шаг чекаута «сколько устройств». Степпер −/+ и переход к оплате.
 
@@ -245,20 +247,28 @@ def tariff_slots_keyboard(tariff_id: int, slots: int, max_slots: int,
 
     stepper = []
     if slots > 0:
-        stepper.append(InlineKeyboardButton(text="➖", callback_data=f"tslots_{tariff_id}_{slots - 1}"))
+        stepper.append(InlineKeyboardButton(text="➖", callback_data=f"tslots_{tariff_id}_{slots - 1}_{packs}"))
     stepper.append(InlineKeyboardButton(
         text=f"📱 {base_limit + slots} устройств", callback_data="noop"
     ))
     if slots < max_slots:
-        stepper.append(InlineKeyboardButton(text="➕", callback_data=f"tslots_{tariff_id}_{slots + 1}"))
+        stepper.append(InlineKeyboardButton(text="➕", callback_data=f"tslots_{tariff_id}_{slots + 1}_{packs}"))
     builder.row(*stepper)
 
+    if max_packs:
+        traffic = []
+        if packs:
+            traffic.append(InlineKeyboardButton(text="➖", callback_data=f"tpacks_{tariff_id}_{slots}_{packs - 1}"))
+        traffic.append(InlineKeyboardButton(text=f"📊 +{packs * pack_gb} ГБ", callback_data="noop"))
+        if packs < max_packs:
+            traffic.append(InlineKeyboardButton(text="➕", callback_data=f"tpacks_{tariff_id}_{slots}_{packs + 1}"))
+        builder.row(*traffic)
     builder.row(InlineKeyboardButton(
-        text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"tpay_{tariff_id}_{slots}"
+        text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"tpay_{tariff_id}_{slots}" + (f"_{packs}" if packs else "")
     ))
     if autorenew_amount:
         builder.row(InlineKeyboardButton(
-            text=f"🔁 С автопродлением · {autorenew_amount} ₽", callback_data=f"tauto_{tariff_id}_{slots}"
+            text=f"🔁 С автопродлением · {autorenew_amount} ₽", callback_data=f"tauto_{tariff_id}_{slots}" + (f"_{packs}" if packs else "")
         ))
     builder.row(InlineKeyboardButton(text="📄 Документы и тарифы", callback_data="documents"))
     builder.row(InlineKeyboardButton(text="⬅️ К выбору тарифа", callback_data="buy_subscription"))
@@ -372,6 +382,7 @@ def keys_screen_keyboard(subscription_url: str) -> InlineKeyboardMarkup:
         # держать рядом две разные кнопки с одним смыслом — верный способ
         # заставить человека перевыпустить ключ дважды подряд.
         builder.button(text="♻️ Перевыпустить ключ", callback_data="revoke_key")
+    builder.button(text="📊 Докупить трафик", callback_data="buy_traffic")
     builder.button(text="📖 Инструкция", callback_data="instruction_info")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
     builder.adjust(1)
@@ -447,6 +458,7 @@ def revoked_key_keyboard(subscription_url: str) -> InlineKeyboardMarkup:
     """Экран после перевыпуска: сразу увести на импорт новой ссылки."""
     builder = InlineKeyboardBuilder()
     builder.button(text="🔗 Открыть страницу подписки", url=subscription_url)
+    builder.button(text="📊 Докупить трафик", callback_data="buy_traffic")
     builder.button(text="📖 Инструкция", callback_data="instruction_info")
     builder.button(text="⬅️ Назад в меню", callback_data="back_to_main_menu")
     builder.adjust(1)
@@ -497,6 +509,7 @@ def admin_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="💳 Управление тарифами", callback_data="admin_tariffs_menu")
     builder.button(text="🎁 Промокоды", callback_data="admin_promo_codes")
     builder.button(text="📱 Доп. устройства", callback_data="admin_device_settings")
+    builder.button(text="📊 Трафик", callback_data="admin_traffic_settings")
     builder.button(text="📤 Рассылка", callback_data="admin_broadcast")
     builder.button(text="⬅️ Выйти из админ-панели", callback_data="back_to_main_menu")
     builder.adjust(1)
@@ -692,4 +705,48 @@ def back_to_promo_list_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для возврата к списку промокодов."""
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅️ К списку промокодов", callback_data="admin_promo_codes")
+    return builder.as_markup()
+
+
+def traffic_purchase_keyboard(packs: int, max_packs: int, total_gb: int, *, total_amount: float) -> InlineKeyboardMarkup:
+    """Докупка трафика в середине оплаченного периода: степпер + оплата."""
+    builder = InlineKeyboardBuilder()
+
+    stepper = []
+    if packs > 1:
+        stepper.append(InlineKeyboardButton(text="➖", callback_data=f"traffic_qty:{packs - 1}"))
+    stepper.append(InlineKeyboardButton(text=f"📊 {total_gb} ГБ", callback_data="noop"))
+    if packs < max_packs:
+        stepper.append(InlineKeyboardButton(text="➕", callback_data=f"traffic_qty:{packs + 1}"))
+    builder.row(*stepper)
+
+    builder.row(InlineKeyboardButton(text=f"💳 Оплатить {total_amount:.2f} ₽", callback_data=f"traffic_pay:platega:{packs}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data="my_profile"))
+    return builder.as_markup()
+
+
+def traffic_invoice_keyboard(payment_url: str | None, packs: int = 1, *, total_amount: float) -> InlineKeyboardMarkup:
+    """Счёт на докупку трафика: оплатить, отменить, вернуться в профиль.
+
+    Отмена обязательна по той же причине, что и у счёта на устройства: пока счёт
+    висит, второй создать нельзя, а Platega сама снимет его только через ~30 минут.
+    """
+    builder = InlineKeyboardBuilder()
+    if payment_url:
+        builder.button(text=f"💳 Оплатить {total_amount:.2f} ₽", url=payment_url)
+    builder.button(text="❌ Отменить счёт", callback_data=f"traffic_cancel_invoice:{packs}")
+    builder.button(text="⬅️ В профиль", callback_data="my_profile")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+
+def traffic_settings_keyboard() -> InlineKeyboardMarkup:
+    """Настройки трафика: размер и цена пакета, потолок докупки."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Размер пакета", callback_data="admin_trafset_traffic_pack_gb")
+    builder.button(text="💰 Цена пакета", callback_data="admin_trafset_traffic_pack_price")
+    builder.button(text="🔝 Потолок докупки", callback_data="admin_trafset_max_traffic_packs")
+    builder.button(text="⬅️ Назад в админ-панель", callback_data="admin_main_menu")
+    builder.adjust(1)
     return builder.as_markup()

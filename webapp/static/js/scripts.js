@@ -115,7 +115,7 @@ async function initPayment(tariffName, price, btn, allowCancelRetry = true) {
     btn.classList.add('btn-loading');
 
     try {
-        const payload = { tariff_name: tariffName, price: price, extra_devices: selectedSlots };
+        const payload = { tariff_name: tariffName, price: price, extra_devices: selectedSlots, extra_traffic_packs: window.getTrafficPacks() };
         if (activePromo) {
             payload.promo_code = activePromo.code;
         }
@@ -390,7 +390,7 @@ async function renderTariffPrices(discountPercent) {
     await Promise.all(Array.from(cards).map(async (card) => {
         const button = card.querySelector('[data-payment-tariff]');
         if (button) button.disabled = true;
-        const payload = { tariff_name: card.dataset.tariffName, price: Number(card.dataset.tariffPrice), extra_devices: slots };
+        const payload = { tariff_name: card.dataset.tariffName, price: Number(card.dataset.tariffPrice), extra_devices: slots, extra_traffic_packs: window.getTrafficPacks() };
         if (promo) payload.promo_code = promo.code;
         try {
             const quote = await paymentQuote(payload);
@@ -585,3 +585,5 @@ document.addEventListener("DOMContentLoaded", function() {
     initSlotSelector();
     loadAutorenew();
 });
+
+window.addEventListener('traffic-packs-changed', () => renderTariffPrices(activePromo ? activePromo.discount_percent : 0));

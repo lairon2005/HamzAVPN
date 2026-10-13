@@ -22,7 +22,7 @@ from db import User
 from loader import bot as tg_bot
 from tgbot.services import (
     device_service,
-    device_slot_service,
+    device_slot_service, traffic_service,
     key_service,
     payment_service,
     profile_service,
@@ -33,6 +33,7 @@ from tgbot.services import support_service
 from tgbot.services.key_service import CODE_OK, REVOKE_NOTICES
 from tgbot.services.referral_service import REFERRAL_TRIAL_DAYS
 from tgbot.services.pricing import effective_price
+from tgbot.services.traffic_pricing import gb_to_packs
 from webapp.core.security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
 from webapp.core.support import (
     SupportValidationError,
@@ -94,6 +95,8 @@ async def tma_home(request: Request, user: User | None = Depends(get_current_use
         "user": user,
         "title": "HamzAVPN",
         "tma_root": True,
+        "traffic_quote": await traffic_service.quote(user.user_id),
+        "traffic_settings": await traffic_service.settings(),
         "active_tab": "home",
         **ctx,
     })
@@ -133,6 +136,8 @@ async def tma_tariffs(request: Request, user: User | None = Depends(get_current_
         "tariffs": tariffs_list,
         "tariff_prices": {tariff.id: effective_price(tariff, bool(user.subscription_end_date and user.subscription_end_date > datetime.now())) for tariff in tariffs_list},
         "device_settings": device_settings,
+        "traffic_settings": await traffic_service.settings(),
+        "current_traffic_packs": gb_to_packs(await traffic_service.settings(), user.extra_traffic_gb or 0),
         # Степпер стартует с уже оплаченных слотов: иначе продление, в котором
         # человек не трогал счётчик, молча снесло бы его доп. устройства.
         # Оплата Stars при активных слотах отклоняется (см. stars_payment.py),
@@ -197,6 +202,8 @@ async def tma_devices(request: Request, user: User | None = Depends(get_current_
         "devices": devices,
         "slot_quote": slot_quote,
         "device_settings": device_settings,
+        "traffic_settings": await traffic_service.settings(),
+        "current_traffic_packs": gb_to_packs(await traffic_service.settings(), user.extra_traffic_gb or 0),
         "title": "Мои устройства",
         "active_tab": "devices",
     })

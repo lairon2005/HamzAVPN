@@ -1,0 +1,14 @@
+{% if traffic_settings and traffic_settings.max_packs and tariffs|selectattr('data_limit_gb')|list %}
+<div class="section-card mb-3 mt-3" id="trafficSelector"
+     data-max-packs="{{ traffic_settings.max_packs }}" data-pack-gb="{{ traffic_settings.pack_gb }}"
+     data-current-packs="{{ current_traffic_packs }}">
+    <span class="fw-bold">Дополнительный трафик</span>
+    <p class="small text-gray">+{{ traffic_settings.pack_gb }} ГБ/мес за {{ traffic_settings.pack_price }} ₽/мес за пакет.
+        Оплачивается на срок тарифа, скидка на пакеты не действует. Для безлимитных тарифов не требуется.</p>
+    <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-brand-outline" data-traffic-packs="-1" aria-label="Уменьшить число пакетов">−</button>
+        <span class="fw-bold" id="trafficPacksLabel">+{{ current_traffic_packs * traffic_settings.pack_gb }} ГБ/мес</span>
+        <button type="button" class="btn btn-sm btn-brand-outline" data-traffic-packs="1" aria-label="Увеличить число пакетов">+</button>
+    </div>
+</div>
+{% endif %}

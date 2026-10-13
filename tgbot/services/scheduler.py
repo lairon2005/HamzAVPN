@@ -639,6 +639,100 @@ async def award_referral_leaderboard(bot: Bot):
 DEVICE_SLOTS_SERIES = 'device_slots'
 
 
+TRAFFIC_SERIES = 'traffic_usage'
+TRAFFIC_WARN_RATIO = 0.9
+
+
+def traffic_alert_step(level: str, now: datetime) -> str:
+    """Шаг трекера касаний: одно предупреждение каждого уровня за расчётный месяц.
+
+    Квота обнуляется 1-го числа (стратегия MONTH), поэтому месяц — естественный цикл.
+    """
+    return f"{level}_{now.strftime('%Y%m')}"
+
+
+async def traffic_usage_alerts(bot: Bot):
+    """Предупреждает о 90% и 100% квоты трафика — с кнопкой докупки."""
+    from tgbot.services import traffic_service
+    from loader import remnawave_client
+
+    logger.info("Scheduler job: предупреждения об исчерпании трафика запущены.")
+
+    try:
+        users = await user_repo.get_active_telegram_subscribers()
+        panel_users = await remnawave_client.get_all_users()
+    except Exception as e:
+        logger.error(f"Предупреждения о трафике: не удалось получить данные: {e}")
+        return
+
+    panel_by_name = {u.get("username"): u for u in panel_users if u.get("username")}
+    now = datetime.now()
+    sent = errors = 0
+
+    for user in users:
+        rw_user = panel_by_name.get(user.vpn_username)
+        if not rw_user:
+            continue
+        limit = int(rw_user.get("trafficLimitBytes") or 0)
+        if limit <= 0:  # безлимит
+            continue
+        used = int(
+            (rw_user.get("userTraffic") or {}).get("usedTrafficBytes", rw_user.get("usedTrafficBytes", 0)) or 0
+        )
+        ratio = used / limit
+
+        if ratio >= 1 or str(rw_user.get("status", "")).upper() == "LIMITED":
+            level = "full"
+        elif ratio >= TRAFFIC_WARN_RATIO:
+            level = "warn"
+        else:
+            continue
+
+        step = traffic_alert_step(level, now)
+        if await lifecycle_repo.was_sent(user.user_id, TRAFFIC_SERIES, step):
+            continue
+        # Предупреждение 90% после уже отправленного «закончился» бессмысленно.
+        if level == "warn" and await lifecycle_repo.was_sent(
+            user.user_id, TRAFFIC_SERIES, traffic_alert_step("full", now)
+        ):
+            continue
+
+        limit_gb = limit // (1024 ** 3)
+        if level == "full":
+            text = (
+                f"📊 <b>Трафик закончился</b> ({limit_gb} ГБ в этом месяце).\n\n"
+                "Доступ вернётся 1-го числа, когда квота обновится, — или добавьте "
+                "гигабайты прямо сейчас, VPN заработает сразу."
+            )
+        else:
+            text = (
+                f"📊 Использовано {int(ratio * 100)}% месячного трафика "
+                f"({used // (1024 ** 3)} из {limit_gb} ГБ).\n\n"
+                "Если не хватает — можно докупить гигабайты до конца подписки."
+            )
+        kb = lifecycle_cta_keyboard(("📊 Докупить трафик", "buy_traffic"))
+
+        if await _send_lifecycle_message(bot, user, text, kb):
+            await lifecycle_repo.mark_sent(user.user_id, TRAFFIC_SERIES, step)
+            sent += 1
+        else:
+            errors += 1
+
+    logger.info(f"Предупреждения о трафике завершены: отправлено={sent}, ошибок={errors}.")
+
+
+async def sync_traffic_limits(bot: Bot):
+    from database import payment_repo
+    from tgbot.services import device_slot_service
+    from loader import remnawave_client
+    settings = await device_slot_service.settings()
+    for user in await user_repo.get_with_extra_traffic():
+        try:
+            await payment_repo.sync_user(user.user_id, remnawave_client, settings.base_limit, settings.max_extra)
+        except Exception:
+            logger.exception('Сверка трафика user=%s отложена', user.user_id)
+
+
 async def sync_device_limits(bot: Bot):
     """Сверяет лимиты устройств с панелью, гасит истёкшие слоты и предупреждает владельцев."""
     from tgbot.services import device_slot_service
@@ -800,6 +894,10 @@ def schedule_jobs(scheduler: AsyncIOScheduler, bot: Bot):
     Добавляет все фоновые задачи в планировщик.
     Вызывается один раз при старте бота.
     """
+    scheduler.add_job(traffic_usage_alerts, trigger='cron', hour='9,12,15,18,21', minute=40,
+                      args=[bot], id='traffic_usage_alerts', replace_existing=True)
+    scheduler.add_job(sync_traffic_limits, trigger='cron', minute=25, args=[bot],
+                      id='sync_traffic_limits', replace_existing=True)
     scheduler.add_job(reconcile_payments, trigger='interval', minutes=5,
                       max_instances=1, coalesce=True)
 

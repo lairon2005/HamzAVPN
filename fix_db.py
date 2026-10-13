@@ -9,6 +9,9 @@ async def fix_database():
         await conn.run_sync(Base.metadata.create_all)
         # Добавочные поля текущей версии; никаких переименований чужих таблиц.
         for ddl in (
+            'ALTER TABLE users ADD COLUMN IF NOT EXISTS extra_traffic_gb INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE payments ADD COLUMN IF NOT EXISTS extra_traffic_gb INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS extra_traffic_gb INTEGER NOT NULL DEFAULT 0',
             'ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_data_limit_gb INTEGER',
             "ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'RUB'",
             'ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_url VARCHAR',

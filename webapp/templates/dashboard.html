@@ -22,7 +22,7 @@
                             </span>
                         {% else %}
                             <span class="status-badge status-badge-expired">
-                                <span class="pulse-dot pulse-dot-red"></span> Истёк
+                                <span class="pulse-dot pulse-dot-red"></span> {{ "Квота исчерпана" if vpn_data.status == "limited" else "Истёк" }}
                             </span>
                         {% endif %}
                     {% endif %}
@@ -36,6 +36,8 @@
                 {{ key_notice }}
             </div>
             {% endif %}
+
+            {% include "_traffic_purchase.html" %}
 
             <!-- VPN Status -->
             {% if user.vpn_username and vpn_data %}
@@ -66,7 +68,7 @@
                     <div class="row align-items-center g-3">
                         <div class="col-12 col-md-8">
                             <h5 class="fw-bold mb-1">
-                                <i class="fas fa-exclamation-circle text-danger-custom me-2"></i>Подписка истекла
+                                <i class="fas fa-exclamation-circle text-danger-custom me-2"></i>{{ "Квота трафика исчерпана" if vpn_data.status == "limited" else "Подписка истекла" }}
                             </h5>
                             <p class="text-gray small mb-0">
                                 Дата окончания: <span class="text-danger-custom fw-bold">{{ vpn_data.expire | float | timestamp_to_date }}</span>
@@ -79,7 +81,7 @@
                         </div>
                     </div>
                     <div class="alert-custom alert-warning-custom mt-3 text-start">
-                        <i class="fas fa-info-circle me-1"></i> Доступ приостановлен. Пополните подписку.
+                        <i class="fas fa-info-circle me-1"></i> {{ "Докупите трафик или дождитесь обновления месячной квоты." if vpn_data.status == "limited" else "Доступ приостановлен. Пополните подписку." }}
                     </div>
                 </div>
                 {% endif %}
@@ -392,6 +394,7 @@
                     </div>
                 </div>
 
+                {% include "_traffic_selector.html" %}
                 <!-- Автопродление: рекуррентная СБП-подписка Platega. Без промокода -->
                 <label class="d-flex align-items-start gap-2 mb-4 p-3" for="autorenewToggle"
                        style="border: 1px solid var(--border-card); border-radius: 10px; cursor: pointer;">

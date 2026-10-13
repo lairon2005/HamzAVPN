@@ -143,14 +143,63 @@ async def _drop_autorenew_after_slots(bot: Bot, user_id: int) -> None:
             from tgbot.keyboards.inline import autorenew_prompt_keyboard
             await bot.send_message(
                 user_id,
-                '🔁 <b>Автопродление отключено</b>, потому что вы изменили число устройств, '
+                '🔁 <b>Автопродление отключено</b>, потому что вы изменили дополнительные услуги, '
                 'а сумма автопродления фиксирована. Деньги больше списываться не будут. '
-                'Подключите его заново — с учётом новых устройств.',
+                'Подключите его заново — с учётом новых устройств и трафика.',
                 reply_markup=autorenew_prompt_keyboard(),
             )
     except Exception:
         logger.exception('Не удалось отключить автопродление после докупки устройств user=%s', user_id)
 
+
+async def _notify_traffic_purchased(bot: Bot, result) -> None:
+    """Трафик начислен — сообщаем новый лимит."""
+    from tgbot.keyboards.inline import back_to_main_menu_keyboard
+
+    bought = result.payment.extra_traffic_gb or 0
+    try:
+        await bot.send_message(
+            result.payment.user_id,
+            f"✅ <b>Оплата прошла</b>\n\n"
+            f"Добавлено трафика: <b>+{bought} ГБ/мес</b>.\n"
+            f"Всего докупленного трафика: <b>{result.extra_traffic_gb} ГБ</b>.\n\n"
+            "Новый лимит уже действует — перевыпускать ключ не нужно. "
+            "Докупленное действует до конца текущей подписки.",
+            reply_markup=back_to_main_menu_keyboard(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify user {result.payment.user_id} about traffic: {e}")
+
+
+async def _log_traffic_purchase(bot: Bot, result) -> None:
+    """Лог докупки трафика в админ-чат."""
+    user = await user_repo.get(result.payment.user_id)
+    if not user:
+        return
+
+    source_icon = "🌐 WEB" if result.payment.user_id < 0 else "🤖 BOT"
+    username_text = f"@{user.username}" if user.username else "Нет"
+
+    text = (
+        f"{source_icon} | 📊 Докупка трафика\n\n"
+        f"👤 <b>User:</b> {user.full_name} (ID: <code>{user.user_id}</code>)\n"
+        f"🏷 <b>Username:</b> {username_text}\n\n"
+        f"➕ <b>Куплено:</b> {result.payment.extra_traffic_gb} ГБ/мес\n"
+        f"📊 <b>Всего докупленного:</b> {result.extra_traffic_gb} ГБ\n"
+        f"💰 <b>Сумма:</b> {result.payment.final_amount:.2f} RUB"
+    )
+
+    try:
+        await bot.send_message(
+            chat_id=config.tg_bot.support_chat_id,
+            message_thread_id=config.tg_bot.transaction_log_topic_id,
+            text=text
+        )
+    except Exception as e:
+        logger.error(f"Failed to send traffic log: {e}")
+
+
+# --- ГЛАВНЫЙ ХЕНДЛЕР ---
 
 async def _notify_slots_purchased(bot: Bot, result) -> None:
     """Слоты начислены — сообщаем новый лимит и ведём на экран устройств."""
@@ -277,6 +326,12 @@ async def platega_webhook_handler(request: web.Request):
         if status == 'CONFIRMED':
             result = await payment_service.process_successful_payment(identifier, order_amount, currency)
             if result is None:
+                return web.Response(status=200)
+            if result.kind == 'traffic':
+                await _log_traffic_purchase(bot, result)
+                if result.payment.user_id > 0:
+                    await _notify_traffic_purchased(bot, result)
+                await _drop_autorenew_after_slots(bot, result.payment.user_id)
                 return web.Response(status=200)
             if result.kind == 'devices':
                 await _log_device_slots_purchase(bot, result)

@@ -303,7 +303,7 @@
         }
         btn.classList.add('btn-loading');
         if (tg && tg.MainButton) tg.MainButton.showProgress();
-        var payload = { tariff_name: tariffName, price: price, source: 'tma', extra_devices: extraDevices || 0 };
+        var payload = { tariff_name: tariffName, price: price, source: 'tma', extra_devices: extraDevices || 0, extra_traffic_packs: window.getTrafficPacks() };
         if (activePromo) payload.promo_code = activePromo.code;
         if (wantAutorenew) payload.autorenew = true;
         try {
@@ -412,6 +412,7 @@
     }
     window.tmaApplyPromo = tmaApplyPromo;
 
+    window.addEventListener('traffic-packs-changed', function () { if (refreshTariffQuoteUI) refreshTariffQuoteUI(); });
     var refreshTariffQuoteUI = null;
     function updateTariffPrices() { if (refreshTariffQuoteUI) refreshTariffQuoteUI(); }
     function resetTariffPrices() { if (refreshTariffQuoteUI) refreshTariffQuoteUI(); }
@@ -452,7 +453,7 @@
                 tg.MainButton.disable();
             }
             await Promise.all(Array.from(cards).map(async function (card) {
-                var payload = { tariff_name: card.dataset.tariffName, price: Number(card.dataset.tariffPrice), source: 'tma', extra_devices: quotedSlots };
+                var payload = { tariff_name: card.dataset.tariffName, price: Number(card.dataset.tariffPrice), source: 'tma', extra_devices: quotedSlots, extra_traffic_packs: window.getTrafficPacks() };
                 if (promo) payload.promo_code = promo.code;
                 try {
                     var quote = await tmaPaymentQuote(payload);

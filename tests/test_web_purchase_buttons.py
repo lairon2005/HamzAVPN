@@ -145,7 +145,7 @@ const card = {dataset: {tariffName: 'Месяц', tariffPrice: '129'},
 let fetchQuote;
 const context = vm.createContext({document: {
   addEventListener() {}, getElementById() {return null;},
-  querySelectorAll() {return [card];}}, window: {}, console,
+  querySelectorAll() {return [card];}}, window: {addEventListener() {}, getTrafficPacks() {return 0;}}, console,
   fetch: async (...args) => fetchQuote(...args), setTimeout, clearTimeout});
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
 function response(amount) {return {ok: true, json: async () => ({final_amount: amount})};}

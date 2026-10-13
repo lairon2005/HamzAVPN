@@ -14,6 +14,7 @@ class PaymentResult:
     payment: Payment | None = None
     kind: str = 'subscription'
     extra_devices: int = 0
+    extra_traffic_gb: int = 0
 
 
 @dataclass
@@ -31,32 +32,34 @@ class PendingPaymentError(RuntimeError):
 
 class PaymentService:
     def __init__(self, subscription_service, referral_service, user_repo, tariff_repo,
-                 payment_repo, payment_method_service=None, device_slot_service=None):
+                 payment_repo, payment_method_service=None, device_slot_service=None, recurring_service=None):
         self._subscription_service = subscription_service
         self._referral_service = referral_service
         self._user_repo = user_repo
         self._tariff_repo = tariff_repo
         self._payment_repo = payment_repo
         self._device_slot_service = device_slot_service
+        self._recurring_service = recurring_service
 
     async def create_payment_record(self, provider_payment_id: str, user_id: int,
                                     tariff_id: int | None, original_amount: float,
                                     final_amount: float, source: str = 'bot',
                                     promo_code: str = None, discount_percent: int = 0,
                                     kind: str = 'subscription', extra_devices: int = 0,
-                                    payment_url: str | None = None) -> Payment:
+                                    payment_url: str | None = None, extra_traffic_gb: int = 0) -> Payment:
         return await self._payment_repo.create(
             provider_payment_id=provider_payment_id, user_id=user_id, tariff_id=tariff_id,
             original_amount=original_amount, final_amount=final_amount, source=source,
             promo_code=promo_code, discount_percent=discount_percent, kind=kind,
-            extra_devices=extra_devices, payment_url=payment_url,
+            extra_devices=extra_devices, payment_url=payment_url, extra_traffic_gb=extra_traffic_gb,
         )
 
     async def create_checkout(self, user_id: int, tariff_id: int | None,
                               original_amount: float, final_amount: float, description: str,
                               return_url: str, source: str = 'bot', promo_code=None,
                               discount_percent: int = 0, kind: str = 'subscription',
-                              extra_devices: int = 0, metadata: dict | None = None):
+                              extra_devices: int = 0, metadata: dict | None = None,
+                              extra_traffic_gb: int = 0):
         from uuid import uuid4
         from tgbot.services.payment import create_payment
         async with self._payment_repo.checkout_lock(user_id):
@@ -66,7 +69,7 @@ class PaymentService:
             reservation = f'order:{order_id}'
             await self.create_payment_record(
                 reservation, user_id, tariff_id, original_amount, final_amount, source,
-                promo_code, discount_percent, kind, extra_devices,
+                promo_code, discount_percent, kind, extra_devices, extra_traffic_gb=extra_traffic_gb,
             )
             details = dict(metadata or {})
             details['orderId'] = order_id
@@ -120,6 +123,11 @@ class PaymentService:
         if payment.referrer_id:
             await self._payment_repo.sync_user(payment.referrer_id, panel, settings.base_limit, settings.max_extra)
         await self._payment_repo.reset_paid_quota(payment.provider_payment_id, panel)
+        if self._recurring_service and payment.kind == 'traffic':
+            user = await self._user_repo.get(payment.user_id)
+            if user:
+                # Сбой отмены оставляет sync_pending для следующей сверки.
+                await self._recurring_service.cancel_if_composition_changed(user)
         await self._payment_repo.mark_synced(payment.provider_payment_id, payment.status)
 
     async def process_successful_payment(self, provider_payment_id: str,
@@ -149,6 +157,7 @@ class PaymentService:
             referrer_id=payment.referrer_id,
             is_first_payment=grant['first'] if grant else False,
             kind=payment.kind, extra_devices=user.extra_devices or 0,
+            extra_traffic_gb=user.extra_traffic_gb or 0,
         )
 
     async def prepare_stars_invoice(self, user_id: int, tariff_id: int):

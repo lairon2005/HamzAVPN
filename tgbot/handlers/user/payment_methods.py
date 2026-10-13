@@ -111,12 +111,14 @@ async def start_autorenew_handler(call: CallbackQuery):
     await call.answer()
     user_id = call.from_user.id
     try:
-        _, tariff_id, slots = call.data.split('_')
+        parts = call.data.split('_')
+        _, tariff_id, slots = parts[:3]
+        packs = int(parts[3]) if len(parts) > 3 else 0
         tariff_id, slots = int(tariff_id), int(slots)
     except ValueError:
         return
     try:
-        sub, url = await recurring_service.start(user_id, tariff_id, slots, source='bot')
+        sub, url = await recurring_service.start(user_id, tariff_id, slots, source='bot', packs=packs)
     except RecurringError as exc:
         await replace_message_text(call.message, f'❌ {escape(str(exc))}',
                                    reply_markup=back_to_main_menu_keyboard())

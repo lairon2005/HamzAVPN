@@ -40,7 +40,7 @@ def _adapt_remnawave_user(rw_user: dict) -> dict:
     )
 
     return {
-        "status": "active" if is_active else "disabled",
+        "status": "active" if is_active else ("limited" if str(rw_user.get("status", "")).upper() == "LIMITED" else "disabled"),
         "expire": expire_ts,
         "used_traffic": used_traffic,
         "data_limit": rw_user.get("trafficLimitBytes", 0),

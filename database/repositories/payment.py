@@ -47,11 +47,17 @@ class PaymentRepository:
                      promo_code: str = None, discount_percent: int = 0,
                      telegram_payment_charge_id: str | None = None,
                      kind: str = 'subscription', extra_devices: int = 0,
-                     payment_url: str | None = None, currency: str = 'RUB') -> Payment:
+                     payment_url: str | None = None, currency: str = 'RUB', extra_traffic_gb: int = 0) -> Payment:
         async with self._session_maker() as session:
             tariff = await session.get(Tariff, tariff_id) if tariff_id else None
             if kind == 'subscription' and tariff is None:
                 raise ValueError('Тариф не найден')
+            if kind not in ('subscription', 'devices', 'traffic'):
+                raise ValueError('Неизвестная услуга')
+            if extra_traffic_gb < 0 or (kind == 'traffic' and (extra_traffic_gb <= 0 or tariff_id is not None)):
+                raise ValueError('Некорректный объём трафика')
+            if currency == 'XTR' and extra_traffic_gb:
+                raise ValueError('Трафик оплачивается в рублях')
             payment = Payment(
                 provider_payment_id=provider_payment_id,
                 order_id=provider_payment_id[6:] if provider_payment_id.startswith('order:') else None,
@@ -63,7 +69,7 @@ class PaymentRepository:
                 promo_code=promo_code,
                 discount_percent=discount_percent,
                 telegram_payment_charge_id=telegram_payment_charge_id,
-                kind=kind,
+                kind=kind, extra_traffic_gb=extra_traffic_gb,
                 extra_devices=extra_devices,
                 payment_url=payment_url, currency=currency,
                 duration_days=tariff.duration_days if tariff else 0,
@@ -79,7 +85,8 @@ class PaymentRepository:
                 if existing is None:
                     raise
                 if (existing.user_id != user_id or existing.final_amount != final_amount
-                        or existing.tariff_id != tariff_id or existing.currency != currency):
+                        or existing.tariff_id != tariff_id or existing.currency != currency
+                        or existing.kind != kind or existing.extra_traffic_gb != extra_traffic_gb):
                     raise ValueError('Конфликт идентификатора платежа')
                 return existing
             await session.refresh(payment)
@@ -380,9 +387,14 @@ class PaymentRepository:
             referrer_id = None
             if payment.kind == 'devices':
                 payer.extra_devices = min(max_extra, (payer.extra_devices or 0) + payment.extra_devices)
+            elif payment.kind == 'traffic':
+                # Не ограничиваем уже оплаченный объём новым потолком настроек.
+                payer.extra_traffic_gb = (payer.extra_traffic_gb or 0) + payment.extra_traffic_gb
             else:
                 payer.subscription_end_date = max(payer.subscription_end_date or now, now) + timedelta(days=payment.duration_days)
                 payer.subscription_data_limit_gb = payment.data_limit_gb
+                payer.extra_traffic_gb = (max(payer.extra_traffic_gb or 0, payment.extra_traffic_gb)
+                    if payment.source == 'auto' else payment.extra_traffic_gb) if payment.data_limit_gb else 0
                 payer.extra_devices = min(max_extra, max(0, payment.extra_devices))
                 if first:
                     referrer = by_id.get(payer.referrer_id)
@@ -420,6 +432,12 @@ class PaymentRepository:
                 raise LookupError('Пользователь не найден')
             if payment.kind == 'devices':
                 user.extra_devices = max(0, (user.extra_devices or 0) - payment.extra_devices)
+            elif payment.kind == 'traffic':
+                renewed = await session.scalar(select(Payment.id).where(
+                    Payment.user_id == user.user_id, Payment.kind == 'subscription',
+                    Payment.status == 'succeeded', Payment.completed_at > payment.completed_at).limit(1))
+                if renewed is None:
+                    user.extra_traffic_gb = max(0, (user.extra_traffic_gb or 0) - payment.extra_traffic_gb)
             elif user.subscription_end_date:
                 user.subscription_end_date -= timedelta(days=payment.duration_days)
             payment.status = 'refunded'
@@ -504,9 +522,12 @@ class PaymentRepository:
             existing = await remnawave.get_user_by_username(username)
             expiry = user.subscription_end_date.strftime('%Y-%m-%dT%H:%M:%S.000Z')
             gb = user.subscription_data_limit_gb
-            byte_limit = None if gb is None else gb * 1024 ** 3
-            strategy = None if gb is None else ('MONTH' if gb > 0 else 'NO_RESET')
             active = user.subscription_end_date > datetime.now()
+            if not active:
+                user.extra_traffic_gb = 0
+            total_gb = gb + (user.extra_traffic_gb or 0) if gb else gb
+            byte_limit = None if total_gb is None else total_gb * 1024 ** 3
+            strategy = None if gb is None else ('MONTH' if gb > 0 else 'NO_RESET')
             limit = base_limit + min(max_extra, user.extra_devices or 0) if active else base_limit
             if existing:
                 identifier = existing['uuid']
