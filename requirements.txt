@@ -15,7 +15,7 @@ pytz
 qrcode[Pil]
 apscheduler
 asyncpg  # Драйвер для PostgreSQL
-SQLAlchemy[asyncio]>=2.0,<2.2
+SQLAlchemy[asyncio]>=2.1.4,<2.2
 
 
 fastapi
