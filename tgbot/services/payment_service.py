@@ -239,6 +239,12 @@ class PaymentService:
                         verified, payment.final_amount, payment.currency,
                         order_id=payment.order_id, user_id=payment.user_id)
                 except ValueError:
+                    if verified.get('status') == 'CANCELED':
+                        # Отменённый счёт не оплачен, сумма в нём не влияет на выдачу
+                        # (например, шлюз поднял сумму до своего минимума). Это не сбой.
+                        await self._payment_repo.cancel_if_pending(payment.provider_payment_id)
+                        await self._payment_repo.mark_checked(payment.provider_payment_id)
+                        continue
                     logger.error('Несовпадение суммы при сверке платежа %s', payment.provider_payment_id)
                     await self._payment_repo.mark_checked(payment.provider_payment_id)
                     continue

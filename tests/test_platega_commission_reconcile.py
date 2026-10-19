@@ -115,3 +115,19 @@ class PayerCommissionReconcileTests(PaymentDatabaseTests):
         self.assertEqual((await self.user()).subscription_end_date,
                          payer_before.subscription_end_date)
         self.panel.reset_user_traffic.assert_awaited_once()
+
+    async def test_canceled_invoice_with_gateway_minimum_amount_is_not_an_error(self):
+        self.client.get_payment.return_value = {
+            **deepcopy(self.verified), 'status': 'CANCELED',
+            'paymentDetails': {'amount': 2.0, 'currency': 'RUB'}, 'comission': 0.08}
+
+        with self.assertNoLogs('loader', level='ERROR'):
+            await self._reconcile()
+            await self._reconcile()
+
+        payment = await self.payment(PAYMENT_ID)
+        self.assertEqual(payment.status, 'cancelled')
+        self.assertIsNone(payment.completed_at)
+        self.assertIsNotNone(payment.last_checked_at)
+        for operation in vars(self.panel).values():
+            operation.assert_not_awaited()
