@@ -131,3 +131,27 @@ class PayerCommissionReconcileTests(PaymentDatabaseTests):
         self.assertIsNotNone(payment.last_checked_at)
         for operation in vars(self.panel).values():
             operation.assert_not_awaited()
+
+    async def test_gross_rounded_up_to_whole_ruble_is_accepted_but_other_overpay_is_not(self):
+        rounded = {**deepcopy(self.verified),
+                   'paymentDetails': {'amount': 140.0, 'currency': 'RUB'}, 'comission': 10.32}
+        # Цена заказа 399, поэтому проверяем правило на 399 + комиссия.
+        rounded['paymentDetails']['amount'] = 410.0
+        rounded['comission'] = 10.32
+        payer_before = await self.user()
+        for name, update in [
+            ('rounded to 411', {'paymentDetails': {'amount': 411.0, 'currency': 'RUB'}}),
+            ('fee changed', {'comission': 11.32}),
+        ]:
+            with self.subTest(case=name):
+                self.client.get_payment.return_value = {**deepcopy(rounded), **update}
+                await self._reconcile()
+                self.assertEqual((await self.payment(PAYMENT_ID)).status, 'pending')
+                self.assertEqual((await self.user()).subscription_end_date,
+                                 payer_before.subscription_end_date)
+
+        self.client.get_payment.return_value = rounded
+        await self._reconcile()
+        payment = await self.payment(PAYMENT_ID)
+        self.assertEqual(payment.status, 'succeeded')
+        self.assertEqual(payment.final_amount, 399)

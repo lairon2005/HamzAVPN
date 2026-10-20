@@ -1,7 +1,7 @@
 """Platega API: https://docs.platega.io/ (разовые платежи)."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import math
 import asyncio
 from email.utils import parsedate_to_datetime
@@ -66,8 +66,8 @@ def verified_order_amount(data: dict, expected_amount, currency: str = 'RUB', *,
     """Сумма заказа, независимо подтверждённая ответом GET Platega.
 
     Наблюдаемый ответ с комиссией поверх цены содержит gross в paymentDetails,
-    comission отдельно и comissionType=0. Принимаем только точное равенство
-    gross - commission цене своего заказа, а не произвольную переплату.
+    comission отдельно и comissionType=0. Принимаем только gross - commission, равное цене своего заказа
+    либо округлённое вверх до целого рубля, а не произвольную переплату.
     """
     try:
         expected = money(expected_amount)
@@ -79,8 +79,11 @@ def verified_order_amount(data: dict, expected_amount, currency: str = 'RUB', *,
             return expected
         commission = money(data['comission'])
         commission_type = data['comissionType']
+        # Platega может округлить сумму плательщика вверх до целого рубля (140 при
+        # заказе 129 и комиссии 10.32). Любое другое расхождение отклоняем.
+        priced = expected + commission
         if (expected <= 0 or gross <= expected or commission <= 0
-                or gross - commission != expected
+                or gross not in (priced, priced.to_integral_value(ROUND_CEILING))
                 or type(commission_type) is not int or commission_type != 0):
             raise ValueError
         # На несовпадение цен допускается только надбавка к нашему же заказу.
